@@ -16,8 +16,11 @@ limitations under the License.
 package client
 
 import (
-	v1 "github.com/yarntime/hybridjob/types"
+	v1 "github.com/yarntime/hybridjob/pkg/types"
 
+	"github.com/golang/glog"
+	"github.com/yarntime/hybridjob/pkg/types"
+	apiextcs "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,16 +28,39 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-// This file implement all the (CRUD) client methods we need to access our CRD object
+func NewClientset(config *rest.Config) (*apiextcs.Clientset, error) {
+	c, err := apiextcs.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+	return c, nil
+}
 
-func NewHybridJobClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace string) *HybridJobClient {
-	return &HybridJobClient{cl: cl, ns: namespace, plural: v1.HybridJobs,
+func NewHybridJobClient(address string) *HybridJobClient {
+
+	config, err := GetClientConfig(address)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	c, _ := NewClientset(config)
+
+	err = types.CreateHybridJob(c)
+	if err != nil {
+		glog.Fatal("Failed to create hybirdjob crd: %v\n", err)
+	}
+
+	crdcs, scheme, err := types.NewClient(config)
+	if err != nil {
+		panic(err)
+	}
+
+	return &HybridJobClient{cl: crdcs, plural: v1.HybridJobs,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
 type HybridJobClient struct {
 	cl     *rest.RESTClient
-	ns     string
 	plural string
 	codec  runtime.ParameterCodec
 }
@@ -42,7 +68,7 @@ type HybridJobClient struct {
 func (f *HybridJobClient) Create(obj *v1.HybridJob) (*v1.HybridJob, error) {
 	var result v1.HybridJob
 	err := f.cl.Post().
-		Namespace(f.ns).Resource(f.plural).
+		Namespace(obj.Namespace).Resource(f.plural).
 		Body(obj).Do().Into(&result)
 	return &result, err
 }
@@ -50,22 +76,23 @@ func (f *HybridJobClient) Create(obj *v1.HybridJob) (*v1.HybridJob, error) {
 func (f *HybridJobClient) Update(obj *v1.HybridJob) (*v1.HybridJob, error) {
 	var result v1.HybridJob
 	err := f.cl.Put().
-		Namespace(f.ns).Resource(f.plural).
+		Name(obj.Name).
+		Namespace(obj.Namespace).Resource(f.plural).
 		Body(obj).Do().Into(&result)
 	return &result, err
 }
 
-func (f *HybridJobClient) Delete(name string, options *meta_v1.DeleteOptions) error {
+func (f *HybridJobClient) Delete(name string, namespace string, options *meta_v1.DeleteOptions) error {
 	return f.cl.Delete().
-		Namespace(f.ns).Resource(f.plural).
+		Namespace(namespace).Resource(f.plural).
 		Name(name).Body(options).Do().
 		Error()
 }
 
-func (f *HybridJobClient) Get(name string) (*v1.HybridJob, error) {
+func (f *HybridJobClient) Get(name string, namespace string) (*v1.HybridJob, error) {
 	var result v1.HybridJob
 	err := f.cl.Get().
-		Namespace(f.ns).Resource(f.plural).
+		Namespace(namespace).Resource(f.plural).
 		Name(name).Do().Into(&result)
 	return &result, err
 }
@@ -73,13 +100,12 @@ func (f *HybridJobClient) Get(name string) (*v1.HybridJob, error) {
 func (f *HybridJobClient) List(opts meta_v1.ListOptions) (*v1.HybridJobList, error) {
 	var result v1.HybridJobList
 	err := f.cl.Get().
-		Namespace(f.ns).Resource(f.plural).
+		Namespace("").Resource(f.plural).
 		VersionedParams(&opts, f.codec).
 		Do().Into(&result)
 	return &result, err
 }
 
-// Create a new List watch for our TPR
-func (f *HybridJobClient) NewListWatch() *cache.ListWatch {
-	return cache.NewListWatchFromClient(f.cl, f.plural, f.ns, fields.Everything())
+func (f *HybridJobClient) NewListWatch(namespace string) *cache.ListWatch {
+	return cache.NewListWatchFromClient(f.cl, f.plural, namespace, fields.Everything())
 }

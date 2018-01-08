@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/rest"
 	"time"
 )
@@ -48,30 +49,61 @@ func CreateHybridJob(clientset apiextcs.Interface) error {
 		if err == nil {
 			return nil
 		}
-		time.Sleep(2000)
+		time.Sleep(1000)
 	}
 
 	return err
-
-	// Note the original apiextensions example adds logic to wait for creation and exception handling
 }
 
-// Definition of our CRD Example class
+type TfReplicaType string
+
+const (
+	PS     TfReplicaType = "PS"
+	WORKER TfReplicaType = "WORKER"
+)
+
+type HybridJobState string
+
+const (
+	Creating HybridJobState = "Creating"
+	Ready    HybridJobState = "Ready"
+	UnReady  HybridJobState = "UnReady"
+	Finished HybridJobState = "Finished"
+	Failed   HybridJobState = "Failed"
+)
+
 type HybridJob struct {
 	meta_v1.TypeMeta   `json:",inline"`
 	meta_v1.ObjectMeta `json:"metadata"`
 	Spec               HybridJobSpec   `json:"spec"`
 	Status             HybridJobStatus `json:"status,omitempty"`
 }
+
 type HybridJobSpec struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+	ReplicaSpecs []*TfReplicaSpec `json:"replicaSpecs"`
+}
+
+type TfReplicaSpec struct {
+	NodeName      string                 `json:"nodeName,omitempty"`
+	MinReplicas   *int32                 `json:"min,omitempty"`
+	MaxReplicas   *int32                 `json:"max,omitempty"`
+	Selector      *meta_v1.LabelSelector `json:"selector,omitempty"`
+	Template      *v1.PodTemplateSpec    `json:"template,omitempty"`
+	TfReplicaType `json:"tfReplicaType"`
 }
 
 type HybridJobStatus struct {
-	State      string `json:"state,omitempty"`
-	PSHost     string `json:"pshost,omitempty"`
-	WorkerHost string `json:"workerhost, omitempty"`
+	Phase           HybridJobState                     `json:"state,omitempty"`
+	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
+	PSHosts         string                             `json:"pshosts,omitempty"`
+	WorkerHosts     string                             `json:"workerhosts, omitempty"`
+	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfreplicaStatus"`
+}
+
+type TfReplicaStatus struct {
+	Active    int32 `json:"active,omitempty"`
+	Succeeded int32 `json:"succeeded,omitempty"`
+	Failed    int32 `json:"failed,omitempty"`
 }
 
 type HybridJobList struct {
@@ -80,7 +112,6 @@ type HybridJobList struct {
 	Items            []HybridJob `json:"items"`
 }
 
-// Create a  Rest client with the new CRD Schema
 var SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}
 
 func addKnownTypes(scheme *runtime.Scheme) error {
