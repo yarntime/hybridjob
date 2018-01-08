@@ -19,7 +19,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubernetes/pkg/controller"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -95,12 +96,8 @@ func NewController(config *Config) *HybridJobController {
 }
 
 func (hjc *HybridJobController) enqueueController(obj interface{}) {
-	key, err := controller.KeyFunc(obj)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %+v: %v", obj, err))
-		return
-	}
-
+	job := obj.(*types.HybridJob)
+	key := job.Namespace + "/" + job.Name
 	hjc.queue.Add(key)
 }
 
@@ -165,7 +162,10 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		job.Status.StartTime = &now
 		job.Status.Phase = types.Creating
 		// only create pods
-		hjc.createAllPods(hybridJob)
+		err := hjc.createAllPods(hybridJob)
+		if err != nil {
+			glog.Errorf("Failed to create pods to hybridjob %s/%s", hybridJob.Namespace, hybridJob.Name)
+		}
 		return hjc.updateHybridJob(hybridJob)
 	}
 
@@ -174,7 +174,22 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		return nil
 	}
 
+	isRunning := 0
+	targetRunning := len(job.Spec.ReplicaSpecs)
+
+	hosts := map[types.TfReplicaType]string{}
+
 	for _, tfReplica := range job.Spec.ReplicaSpecs {
+
+		preStatus, ok := job.Status.TfReplicaStatus[tfReplica.TfReplicaType]
+		if !ok {
+			preStatus = &types.TfReplicaStatus{}
+		}
+
+		if preStatus.Phase == types.Finished || preStatus.Phase == types.Failed {
+			continue
+		}
+
 		pods, err := hjc.getPodsForTfReplica(job.Namespace, tfReplica)
 		if err != nil {
 			return err
@@ -182,23 +197,46 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 
 		activePods := FilterActivePods(pods)
 		active := int32(len(activePods))
+		desired := preStatus.Desired
 		succeeded, failed := getStatus(pods)
+		phase := preStatus.Phase
 
-		if preStatus, ok := job.Status.TfReplicaStatus[tfReplica.TfReplicaType]; ok {
-			if preStatus.Active != active || preStatus.Succeeded != succeeded || preStatus.Failed != failed {
-				changed = true
-				preStatus.Failed = failed
-				preStatus.Succeeded = succeeded
-				preStatus.Active = active
+		if active >= *tfReplica.MinReplicas && active <= *tfReplica.MaxReplicas && preStatus.Phase != types.Running {
+			phase = types.Running
+			preStatus.Desired = active
+			glog.V(4).Infof("Hybridjob(%s/%s:%s) is running, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			pendingPods := FilterPendingPods(pods)
+			for _, pod := range pendingPods {
+				err = hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
+				if err != nil {
+					glog.Errorf("Failed to delete pod %s/%s.", pod.Namespace, pod.Name)
+				}
 			}
-		} else {
-			changed = true
-			job.Status.TfReplicaStatus[tfReplica.TfReplicaType] = &types.TfReplicaStatus{
-				Active:    active,
-				Succeeded: succeeded,
-				Failed:    failed,
-			}
+			isRunning++
+			hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
+		} else if desired == succeeded && preStatus.Phase != types.Finished {
+			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			phase = types.Finished
+		} else if desired == failed && preStatus.Phase != types.Failed {
+			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			phase = types.Failed
 		}
+
+		if preStatus.Phase != phase {
+			changed = true
+			preStatus.Phase = phase
+			preStatus.Failed = failed
+			preStatus.Succeeded = succeeded
+			preStatus.Active = active
+		}
+	}
+
+	if isRunning == targetRunning {
+		changed = true
+		glog.V(4).Infof("Hybridjob(%s/%s) is Ready", hybridJob.Namespace, hybridJob.Name)
+		hybridJob.Status.Phase = types.Ready
+		hybridJob.Status.PSHosts = hosts[types.PS]
+		hybridJob.Status.WorkerHosts = hosts[types.WORKER]
 	}
 
 	if changed {
@@ -208,7 +246,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 	return nil
 }
 
-func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) ([]v1.Pod, error) {
+func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) error {
 	commonLabels := hj.ObjectMeta.Labels
 	for _, tfReplicaSpec := range hj.Spec.ReplicaSpecs {
 		selector := &meta_v1.LabelSelector{
@@ -217,9 +255,10 @@ func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) ([]v1.Pod, er
 		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
-			hjc.createPod(tfReplicaSpec, hj)
+			hjc.createPod(tfReplicaSpec, hj, index)
 		}
 	}
+	return nil
 }
 
 func (hjc *HybridJobController) getPodsForTfReplica(namespace string, tfr *types.TfReplicaSpec) ([]v1.Pod, error) {
@@ -245,13 +284,14 @@ func (hjc *HybridJobController) updateHybridJob(hybridJob *types.HybridJob) erro
 	return nil
 }
 
-func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob) error {
+func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) error {
 	owner := hybridJob.Namespace + "/" + hybridJob.Name + ":" + string(tfReplicaSpec.TfReplicaType)
 
 	pod, err := GetPodFromTemplate(tfReplicaSpec.Template, owner)
 	if err != nil {
 		return err
 	}
+	pod.Name = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-" + strconv.Itoa(int(index))
 	if len(tfReplicaSpec.NodeName) != 0 {
 		pod.Spec.NodeName = tfReplicaSpec.NodeName
 	}
@@ -292,10 +332,7 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, owner string) (*v1.Pod, er
 	}
 
 	if owner != "" {
-		pod.OwnerReferences = append(pod.OwnerReferences, meta_v1.OwnerReference{
-			Kind: types.HybridJobs,
-			Name: owner,
-		})
+		// TODO: set pod owner here
 	}
 
 	clone, err := api.Scheme.DeepCopy(&template.Spec)
@@ -322,6 +359,21 @@ func FilterActivePods(pods []v1.Pod) []v1.Pod {
 func IsPodActive(p v1.Pod) bool {
 	return v1.PodSucceeded != p.Status.Phase &&
 		v1.PodFailed != p.Status.Phase &&
+		p.DeletionTimestamp == nil
+}
+
+func FilterPendingPods(pods []v1.Pod) []v1.Pod {
+	var result []v1.Pod
+	for _, p := range pods {
+		if IsPodPending(p) {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func IsPodPending(p v1.Pod) bool {
+	return v1.PodPending == p.Status.Phase &&
 		p.DeletionTimestamp == nil
 }
 

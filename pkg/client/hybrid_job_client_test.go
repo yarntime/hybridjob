@@ -3,8 +3,8 @@ package client
 import (
 	"github.com/yarntime/hybridjob/pkg/tools"
 	"github.com/yarntime/hybridjob/pkg/types"
-	corev1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/client-go/pkg/api/v1"
 	"testing"
 )
 
@@ -27,7 +27,7 @@ func TestCreateResource(t *testing.T) {
 		},
 		Spec: types.HybridJobSpec{
 			ReplicaSpecs: []*types.TfReplicaSpec{
-				&types.TfReplicaSpec{
+				{
 					MinReplicas:   tools.NewInt32(1),
 					MaxReplicas:   tools.NewInt32(5),
 					TfReplicaType: types.PS,
@@ -50,7 +50,7 @@ func TestCreateResource(t *testing.T) {
 						},
 					},
 				},
-				&types.TfReplicaSpec{
+				{
 					MinReplicas:   tools.NewInt32(1),
 					MaxReplicas:   tools.NewInt32(5),
 					TfReplicaType: types.WORKER,
@@ -74,9 +74,6 @@ func TestCreateResource(t *testing.T) {
 					},
 				},
 			},
-		},
-		Status: types.HybridJobStatus{
-			State: "created",
 		},
 	}
 

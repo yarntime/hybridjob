@@ -19,6 +19,7 @@ import (
 	v1 "github.com/yarntime/hybridjob/pkg/types"
 
 	"github.com/golang/glog"
+	"github.com/yarntime/hybridjob/pkg/tools"
 	"github.com/yarntime/hybridjob/pkg/types"
 	apiextcs "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +39,7 @@ func NewClientset(config *rest.Config) (*apiextcs.Clientset, error) {
 
 func NewHybridJobClient(address string) *HybridJobClient {
 
-	config, err := GetClientConfig(address)
+	config, err := tools.GetClientConfig(address)
 	if err != nil {
 		panic(err.Error())
 	}

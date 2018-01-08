@@ -2,8 +2,9 @@ package tools
 
 import (
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 	"time"
 )
@@ -11,6 +12,13 @@ import (
 const (
 	SchedulingGroup string = "schedulinggroup"
 )
+
+func GetClientConfig(host string) (*rest.Config, error) {
+	if host != "" {
+		return clientcmd.BuildConfigFromFlags(host, "")
+	}
+	return rest.InClusterConfig()
+}
 
 type FixedItemIntervalRateLimiter struct {
 	interval time.Duration
@@ -56,6 +64,15 @@ func GetPodsAnnotationSet(template *v1.PodTemplateSpec) (labels.Set, error) {
 	// TODO add scheduling group info to pod's annotation
 	desiredAnnotations[SchedulingGroup] = "test"
 	return desiredAnnotations, nil
+}
+
+func GenerateHosts(pods []v1.Pod) string {
+	hosts := ""
+	for _, pod := range pods {
+		hosts = hosts + pod.Status.PodIP + ","
+	}
+	rs := []rune(hosts)
+	return string(rs[0 : len(rs)-1])
 }
 
 func NewInt32(val int32) *int32 {

@@ -58,25 +58,26 @@ func CreateHybridJob(clientset apiextcs.Interface) error {
 type TfReplicaType string
 
 const (
-	PS     TfReplicaType = "PS"
-	WORKER TfReplicaType = "WORKER"
+	PS     TfReplicaType = "ps"
+	WORKER TfReplicaType = "worker"
 )
 
-type HybridJobState string
+type JobPhase string
 
 const (
-	Creating HybridJobState = "Creating"
-	Ready    HybridJobState = "Ready"
-	UnReady  HybridJobState = "UnReady"
-	Finished HybridJobState = "Finished"
-	Failed   HybridJobState = "Failed"
+	Creating JobPhase = "Creating"
+	Running  JobPhase = "Running"
+	Ready    JobPhase = "Ready"
+	UnReady  JobPhase = "UnReady"
+	Finished JobPhase = "Finished"
+	Failed   JobPhase = "Failed"
 )
 
 type HybridJob struct {
 	meta_v1.TypeMeta   `json:",inline"`
 	meta_v1.ObjectMeta `json:"metadata"`
 	Spec               HybridJobSpec   `json:"spec"`
-	Status             HybridJobStatus `json:"status,omitempty"`
+	Status             HybridJobStatus `json:"status"`
 }
 
 type HybridJobSpec struct {
@@ -87,13 +88,13 @@ type TfReplicaSpec struct {
 	NodeName      string                 `json:"nodeName,omitempty"`
 	MinReplicas   *int32                 `json:"min,omitempty"`
 	MaxReplicas   *int32                 `json:"max,omitempty"`
-	Selector      *meta_v1.LabelSelector `json:"selector,omitempty"`
+	Selector      *meta_v1.LabelSelector `json:"selector"`
 	Template      *v1.PodTemplateSpec    `json:"template,omitempty"`
 	TfReplicaType `json:"tfReplicaType"`
 }
 
 type HybridJobStatus struct {
-	Phase           HybridJobState                     `json:"state,omitempty"`
+	Phase           JobPhase                           `json:"phase,omitempty"`
 	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
 	PSHosts         string                             `json:"pshosts,omitempty"`
 	WorkerHosts     string                             `json:"workerhosts, omitempty"`
@@ -101,9 +102,11 @@ type HybridJobStatus struct {
 }
 
 type TfReplicaStatus struct {
-	Active    int32 `json:"active,omitempty"`
-	Succeeded int32 `json:"succeeded,omitempty"`
-	Failed    int32 `json:"failed,omitempty"`
+	Phase     JobPhase `json:"phase,omitempty"`
+	Active    int32    `json:"active,omitempty"`
+	Succeeded int32    `json:"succeeded,omitempty"`
+	Failed    int32    `json:"failed,omitempty"`
+	Desired   int32    `json:"desired,omitempty"`
 }
 
 type HybridJobList struct {
