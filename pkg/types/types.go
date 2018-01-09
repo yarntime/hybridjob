@@ -22,39 +22,6 @@ const (
 	FullCRDName string = HybridJobs + "." + Group
 )
 
-// Create the CRD resource, ignore error if it already exists
-func CreateHybridJob(clientset apiextcs.Interface) error {
-	crd := &apiextv1beta1.CustomResourceDefinition{
-		ObjectMeta: meta_v1.ObjectMeta{Name: FullCRDName},
-		Spec: apiextv1beta1.CustomResourceDefinitionSpec{
-			Group:   Group,
-			Version: Version,
-			Scope:   apiextv1beta1.NamespaceScoped,
-			Names: apiextv1beta1.CustomResourceDefinitionNames{
-				Plural:     HybridJobs,
-				Singular:   "hybridjob",
-				ShortNames: []string{"hj"},
-				Kind:       reflect.TypeOf(HybridJob{}).Name(),
-			},
-		},
-	}
-
-	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
-	if err != nil && apierrors.IsAlreadyExists(err) {
-		return nil
-	}
-
-	for {
-		_, err = clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(FullCRDName, meta_v1.GetOptions{})
-		if err == nil {
-			return nil
-		}
-		time.Sleep(1000)
-	}
-
-	return err
-}
-
 type TfReplicaType string
 
 const (
@@ -118,6 +85,39 @@ type HybridJobList struct {
 type SchedulingGroup struct {
 	Group string `json:"group"`
 	Role  string `json:"role"`
+}
+
+// Create the CRD resource, ignore error if it already exists
+func CreateHybridJob(clientset apiextcs.Interface) error {
+	crd := &apiextv1beta1.CustomResourceDefinition{
+		ObjectMeta: meta_v1.ObjectMeta{Name: FullCRDName},
+		Spec: apiextv1beta1.CustomResourceDefinitionSpec{
+			Group:   Group,
+			Version: Version,
+			Scope:   apiextv1beta1.NamespaceScoped,
+			Names: apiextv1beta1.CustomResourceDefinitionNames{
+				Plural:     HybridJobs,
+				Singular:   "hybridjob",
+				ShortNames: []string{"hj"},
+				Kind:       reflect.TypeOf(HybridJob{}).Name(),
+			},
+		},
+	}
+
+	_, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+	if err != nil && apierrors.IsAlreadyExists(err) {
+		return nil
+	}
+
+	for {
+		_, err = clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Get(FullCRDName, meta_v1.GetOptions{})
+		if err == nil {
+			return nil
+		}
+		time.Sleep(1000)
+	}
+
+	return err
 }
 
 var SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}

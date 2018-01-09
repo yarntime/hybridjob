@@ -29,13 +29,6 @@ const (
 	Role = "ecp-role"
 )
 
-type Config struct {
-	Address               string
-	ConcurrentJobHandlers int
-	StopCh                chan struct{}
-	ResyncPeriod          time.Duration
-}
-
 type HybridJobController struct {
 	k8sClient *k8s.Clientset
 
@@ -60,8 +53,8 @@ func IsJobFinished(hj *types.HybridJob) bool {
 
 func NewController(config *Config) *HybridJobController {
 
-	k8sClient := client.NewK8sClint(config.Address)
-	hybridJobClient := client.NewHybridJobClient(config.Address)
+	k8sClient := config.K8sClient
+	hybridJobClient := config.HybridJobClient
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
