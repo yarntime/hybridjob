@@ -1,0 +1,39 @@
+apiVersion: rivernet.io/v1
+kind: HybridJob
+metadata:
+  labels:
+    mylabel: test
+  name: job
+  namespace: default
+spec:
+  replicaSpecs:
+  - max: 1
+    min: 1
+    template:
+      spec:
+        containers:
+        - image: nginx:1.3
+          name: ps
+          command: ["sleep", "120"]
+          ports:
+          - containerPort: 80
+            name: http
+            protocol: TCP
+          resources: {}
+        restartPolicy: Never
+    tfReplicaType: ps
+  - max: 1
+    min: 1
+    template:
+      spec:
+        containers:
+        - image: nginx:1.3
+          name: worker
+          command: ["sleep", "120"]
+          ports:
+          - containerPort: 80
+            name: http
+            protocol: TCP
+          resources: {}
+        restartPolicy: Never
+    tfReplicaType: worker
