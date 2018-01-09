@@ -34,7 +34,7 @@ func (rs *RestServer) Register(container *restful.Container) {
 	ws.Route(ws.GET("/namespaces/{namespace}/hybridjob/{name}/status").To(rs.GetJobStatus).
 		Doc("get hybrid job status").
 		Operation("get hybrid job status").
-		Param(ws.PathParameter("namespace", "the namespace of the target hybird job")).
+		Param(ws.PathParameter("namespace", "the namespace of the target hybrid job")).
 		Param(ws.PathParameter("name", "the name of the target hybrid job")).
 		Writes(types.HybridJobStatus{}))
 
@@ -61,5 +61,11 @@ func (rs *RestServer) Run(stop chan struct{}) {
 
 	glog.Infof("start listening on %s:%d", rs.address, rs.port)
 	server := &http.Server{Addr: net.JoinHostPort(rs.address, strconv.Itoa(rs.port)), Handler: wsContainer}
+
+	go func() {
+		<-stop
+		server.Close()
+	}()
+
 	glog.Fatal(server.ListenAndServe())
 }

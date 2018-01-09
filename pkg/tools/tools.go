@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	SchedulingGroup string = "ecp-scheduling-group"
+	SchedulingGroup = "ecp-scheduling-group"
 )
 
 func GetClientConfig(host string) (*rest.Config, error) {
@@ -57,16 +57,17 @@ func GetPodsFinalizers(template *v1.PodTemplateSpec) []string {
 	return desiredFinalizers
 }
 
-func GetPodsAnnotationSet(template *v1.PodTemplateSpec, key string, role types.TfReplicaType) (labels.Set, error) {
+func GetPodsAnnotationSet(key string, tfReplicaSpec types.TfReplicaSpec) (labels.Set, error) {
 	desiredAnnotations := make(labels.Set)
-	for k, v := range template.Annotations {
+	for k, v := range tfReplicaSpec.Template.Annotations {
 		desiredAnnotations[k] = v
 	}
 
-	// TODO add scheduling group info to pod's annotation
 	group := types.SchedulingGroup{
-		Group: key,
-		Role:  string(role),
+		Group:       key,
+		Role:        string(tfReplicaSpec.TfReplicaType),
+		MinReplicas: *tfReplicaSpec.MinReplicas,
+		MaxReplicas: *tfReplicaSpec.MaxReplicas,
 	}
 	data, _ := json.Marshal(&group)
 	desiredAnnotations[SchedulingGroup] = string(data)

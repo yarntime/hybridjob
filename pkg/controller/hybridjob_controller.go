@@ -421,7 +421,7 @@ func GetPodFromTemplate(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.Hyb
 	key := tools.GetKeyOfHybridJob(hybridJob)
 	desiredLabels := tools.GetPodsLabelSet(template)
 	desiredFinalizers := tools.GetPodsFinalizers(template)
-	desiredAnnotations, err := tools.GetPodsAnnotationSet(template, key, tfReplicaSpec.TfReplicaType)
+	desiredAnnotations, err := tools.GetPodsAnnotationSet(key, tfReplicaSpec)
 	if err != nil {
 		return nil, err
 	}

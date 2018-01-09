@@ -83,8 +83,10 @@ type HybridJobList struct {
 }
 
 type SchedulingGroup struct {
-	Group string `json:"group"`
-	Role  string `json:"role"`
+	Group       string `json:"group"`
+	Role        string `json:"role"`
+	MinReplicas int32  `json:"minReplica"`
+	MaxReplicas int32  `json:maxReplica"`
 }
 
 // Create the CRD resource, ignore error if it already exists
