@@ -16,12 +16,13 @@ var (
 func init() {
 	flag.StringVar(&address, "address", "192.168.254.45:8080", "APIServer addr")
 	flag.IntVar(&concurrentJobHandlers, "concurrentJobHandlers", 4, "Concurrent job handlers")
-	flag.DurationVar(&resyncPeriod, "resync period", time.Second*15, "resync period")
+	flag.DurationVar(&resyncPeriod, "resync period", time.Minute*30, "resync period")
+	flag.Set("alsologtostderr", "true")
+	flag.Set("v", "10")
 	flag.Parse()
 }
 
 func main() {
-	glog.Info("Controller started.")
 	stop := make(chan struct{})
 	config := &c.Config{
 		Address:               address,

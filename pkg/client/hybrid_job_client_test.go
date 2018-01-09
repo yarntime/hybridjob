@@ -29,7 +29,7 @@ func TestCreateResource(t *testing.T) {
 			ReplicaSpecs: []*types.TfReplicaSpec{
 				{
 					MinReplicas:   tools.NewInt32(1),
-					MaxReplicas:   tools.NewInt32(5),
+					MaxReplicas:   tools.NewInt32(1),
 					TfReplicaType: types.PS,
 					Template: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
@@ -52,7 +52,7 @@ func TestCreateResource(t *testing.T) {
 				},
 				{
 					MinReplicas:   tools.NewInt32(1),
-					MaxReplicas:   tools.NewInt32(5),
+					MaxReplicas:   tools.NewInt32(1),
 					TfReplicaType: types.WORKER,
 					Template: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{

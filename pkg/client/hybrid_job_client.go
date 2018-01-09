@@ -56,14 +56,23 @@ func NewHybridJobClient(address string) *HybridJobClient {
 		panic(err)
 	}
 
-	return &HybridJobClient{cl: crdcs, plural: v1.HybridJobs,
+	return &HybridJobClient{cl: crdcs, plural: v1.HybridJobs, scheme: scheme,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
 type HybridJobClient struct {
 	cl     *rest.RESTClient
+	scheme *runtime.Scheme
 	plural string
 	codec  runtime.ParameterCodec
+}
+
+func (f *HybridJobClient) RESTClient() *rest.RESTClient {
+	return f.cl
+}
+
+func (f *HybridJobClient) Scheme() *runtime.Scheme {
+	return f.scheme
 }
 
 func (f *HybridJobClient) Create(obj *v1.HybridJob) (*v1.HybridJob, error) {

@@ -97,7 +97,7 @@ type HybridJobStatus struct {
 	Phase           JobPhase                           `json:"phase,omitempty"`
 	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
 	PSHosts         string                             `json:"pshosts,omitempty"`
-	WorkerHosts     string                             `json:"workerhosts, omitempty"`
+	WorkerHosts     string                             `json:"workerhosts,omitempty"`
 	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfreplicaStatus"`
 }
 

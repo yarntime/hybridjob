@@ -7,8 +7,8 @@ import (
 	"github.com/yarntime/hybridjob/pkg/tools"
 	"github.com/yarntime/hybridjob/pkg/types"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8s "k8s.io/client-go/kubernetes"
@@ -59,26 +59,26 @@ func IsJobFinished(hj *types.HybridJob) bool {
 
 func NewController(config *Config) *HybridJobController {
 
-	k8cClient := client.NewK8sClint(config.Address)
+	k8sClient := client.NewK8sClint(config.Address)
 	hybridJobClient := client.NewHybridJobClient(config.Address)
 
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(k8cClient.CoreV1().RESTClient()).Events("")})
+	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(k8sClient.CoreV1().RESTClient()).Events("")})
 
 	hjc := &HybridJobController{
-		k8sClient:             k8cClient,
+		k8sClient:             k8sClient,
 		hybridJobClient:       hybridJobClient,
-		recorder:              eventBroadcaster.NewRecorder(runtime.NewScheme(), clientv1.EventSource{Component: "hybridjob-controller"}),
+		recorder:              eventBroadcaster.NewRecorder(hybridJobClient.Scheme(), clientv1.EventSource{Component: "hybridjob-controller"}),
 		concurrentJobHandlers: config.ConcurrentJobHandlers,
 		queue:        workqueue.NewNamedRateLimitingQueue(tools.NewFixedItemIntervalRateLimiter(config.ResyncPeriod), "hybridjob"),
 		resyncPeriod: config.ResyncPeriod,
 	}
 
-	_, c := cache.NewInformer(
+	_, hjlw := cache.NewInformer(
 		hybridJobClient.NewListWatch(""),
 		&types.HybridJob{},
-		time.Minute*10,
+		hjc.resyncPeriod,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    hjc.enqueueController,
 			DeleteFunc: hjc.enqueueController,
@@ -90,9 +90,68 @@ func NewController(config *Config) *HybridJobController {
 		},
 	)
 
-	go c.Run(config.StopCh)
+	_, plw := cache.NewInformer(
+		cache.NewListWatchFromClient(k8sClient.CoreV1().RESTClient(), "pods", meta_v1.NamespaceAll, fields.Everything()),
+		&v1.Pod{},
+		0,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    hjc.addPod,
+			UpdateFunc: hjc.updatePod,
+			DeleteFunc: hjc.deletePod,
+		},
+	)
+
+	go hjlw.Run(config.StopCh)
+	go plw.Run(config.StopCh)
 
 	return hjc
+}
+
+func (hjc *HybridJobController) addPod(obj interface{}) {
+	pod := obj.(*v1.Pod)
+	if pod.DeletionTimestamp != nil {
+		hjc.deletePod(pod)
+		return
+	}
+	key := resolveControllerRef(pod.OwnerReferences)
+	if key != "" {
+		hjc.queue.Add(key)
+	}
+}
+
+func (hjc *HybridJobController) updatePod(old, cur interface{}) {
+	curPod := cur.(*v1.Pod)
+	oldPod := old.(*v1.Pod)
+
+	if curPod.ResourceVersion == oldPod.ResourceVersion {
+		return
+	}
+	if curPod.DeletionTimestamp != nil {
+		hjc.deletePod(curPod)
+		return
+	}
+
+	curkey := resolveControllerRef(curPod.OwnerReferences)
+	if curkey != "" {
+		hjc.queue.Add(curkey)
+	}
+}
+
+func (hjc *HybridJobController) deletePod(obj interface{}) {
+	pod := obj.(*v1.Pod)
+	key := resolveControllerRef(pod.OwnerReferences)
+	if key != "" {
+		hjc.queue.Add(key)
+	}
+}
+
+func resolveControllerRef(rfs []meta_v1.OwnerReference) (key string) {
+	for _, rf := range rfs {
+		if rf.Kind == types.HybridJobs {
+			return rf.Name
+		}
+	}
+	return ""
 }
 
 func (hjc *HybridJobController) enqueueController(obj interface{}) {
@@ -155,12 +214,11 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 	}
 
 	changed := false
-	job := *hybridJob
 
-	if job.Status.StartTime == nil {
+	if hybridJob.Status.StartTime == nil {
 		now := meta_v1.Now()
-		job.Status.StartTime = &now
-		job.Status.Phase = types.Creating
+		hybridJob.Status.StartTime = &now
+		hybridJob.Status.Phase = types.Creating
 		// only create pods
 		err := hjc.createAllPods(hybridJob)
 		if err != nil {
@@ -170,18 +228,18 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 	}
 
 	// if job was finished previously, we don't want to redo the termination
-	if IsJobFinished(&job) {
+	if IsJobFinished(hybridJob) {
 		return nil
 	}
 
 	isRunning := 0
-	targetRunning := len(job.Spec.ReplicaSpecs)
+	targetRunning := len(hybridJob.Spec.ReplicaSpecs)
 
 	hosts := map[types.TfReplicaType]string{}
 
-	for _, tfReplica := range job.Spec.ReplicaSpecs {
+	for _, tfReplica := range hybridJob.Spec.ReplicaSpecs {
 
-		preStatus, ok := job.Status.TfReplicaStatus[tfReplica.TfReplicaType]
+		preStatus, ok := hybridJob.Status.TfReplicaStatus[tfReplica.TfReplicaType]
 		if !ok {
 			preStatus = &types.TfReplicaStatus{}
 		}
@@ -190,7 +248,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 			continue
 		}
 
-		pods, err := hjc.getPodsForTfReplica(job.Namespace, tfReplica)
+		pods, err := hjc.getPodsForTfReplica(hybridJob.Namespace, tfReplica)
 		if err != nil {
 			return err
 		}
@@ -201,7 +259,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		succeeded, failed := getStatus(pods)
 		phase := preStatus.Phase
 
-		if active >= *tfReplica.MinReplicas && active <= *tfReplica.MaxReplicas && preStatus.Phase != types.Running {
+		if active >= *tfReplica.MinReplicas && active <= *tfReplica.MaxReplicas && preStatus.Phase == types.Creating {
 			phase = types.Running
 			preStatus.Desired = active
 			glog.V(4).Infof("Hybridjob(%s/%s:%s) is running, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
@@ -214,10 +272,10 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 			}
 			isRunning++
 			hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
-		} else if desired == succeeded && preStatus.Phase != types.Finished {
+		} else if desired != 0 && desired == succeeded && preStatus.Phase == types.Running {
 			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Finished
-		} else if desired == failed && preStatus.Phase != types.Failed {
+		} else if desired != 0 && desired == failed && preStatus.Phase == types.Running {
 			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Failed
 		}
@@ -248,6 +306,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 
 func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) error {
 	commonLabels := hj.ObjectMeta.Labels
+	hj.Status.TfReplicaStatus = make(map[types.TfReplicaType]*types.TfReplicaStatus)
 	for _, tfReplicaSpec := range hj.Spec.ReplicaSpecs {
 		selector := &meta_v1.LabelSelector{
 			MatchLabels: commonLabels,
@@ -256,6 +315,9 @@ func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) error {
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
 			hjc.createPod(tfReplicaSpec, hj, index)
+		}
+		hj.Status.TfReplicaStatus[tfReplicaSpec.TfReplicaType] = &types.TfReplicaStatus{
+			Phase: types.Creating,
 		}
 	}
 	return nil
@@ -285,13 +347,14 @@ func (hjc *HybridJobController) updateHybridJob(hybridJob *types.HybridJob) erro
 }
 
 func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) error {
-	owner := hybridJob.Namespace + "/" + hybridJob.Name + ":" + string(tfReplicaSpec.TfReplicaType)
-
-	pod, err := GetPodFromTemplate(tfReplicaSpec.Template, owner)
+	pod, err := GetPodFromTemplate(tfReplicaSpec.Template, hybridJob)
 	if err != nil {
 		return err
 	}
+
 	pod.Name = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-" + strconv.Itoa(int(index))
+	pod.OwnerReferences[0].UID = *meta_v1.NewUIDPreconditions(pod.Name).UID
+
 	if len(tfReplicaSpec.NodeName) != 0 {
 		pod.Spec.NodeName = tfReplicaSpec.NodeName
 	}
@@ -315,7 +378,7 @@ func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hy
 	return nil
 }
 
-func GetPodFromTemplate(template *v1.PodTemplateSpec, owner string) (*v1.Pod, error) {
+func GetPodFromTemplate(template *v1.PodTemplateSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
 	desiredLabels := tools.GetPodsLabelSet(template)
 	desiredFinalizers := tools.GetPodsFinalizers(template)
 	desiredAnnotations, err := tools.GetPodsAnnotationSet(template)
@@ -331,8 +394,12 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, owner string) (*v1.Pod, er
 		},
 	}
 
-	if owner != "" {
-		// TODO: set pod owner here
+	pod.ObjectMeta.OwnerReferences = []meta_v1.OwnerReference{
+		{
+			APIVersion: types.Version,
+			Kind:       types.HybridJobs,
+			Name:       hybridJob.Namespace + "/" + hybridJob.Name,
+		},
 	}
 
 	clone, err := api.Scheme.DeepCopy(&template.Spec)
@@ -357,8 +424,7 @@ func FilterActivePods(pods []v1.Pod) []v1.Pod {
 }
 
 func IsPodActive(p v1.Pod) bool {
-	return v1.PodSucceeded != p.Status.Phase &&
-		v1.PodFailed != p.Status.Phase &&
+	return v1.PodRunning == p.Status.Phase &&
 		p.DeletionTimestamp == nil
 }
 
