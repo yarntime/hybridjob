@@ -115,6 +115,11 @@ type HybridJobList struct {
 	Items            []HybridJob `json:"items"`
 }
 
+type SchedulingGroup struct {
+	Group string `json:"group"`
+	Role  string `json:"role"`
+}
+
 var SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}
 
 func addKnownTypes(scheme *runtime.Scheme) error {

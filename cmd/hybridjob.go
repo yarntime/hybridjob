@@ -18,7 +18,7 @@ func init() {
 	flag.IntVar(&concurrentJobHandlers, "concurrentJobHandlers", 4, "Concurrent job handlers")
 	flag.DurationVar(&resyncPeriod, "resync period", time.Minute*30, "resync period")
 	flag.Set("alsologtostderr", "true")
-	flag.Set("v", "10")
+	flag.Set("v", "4")
 	flag.Parse()
 }
 

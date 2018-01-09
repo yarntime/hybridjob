@@ -6,6 +6,7 @@ import (
 	"github.com/yarntime/hybridjob/pkg/client"
 	"github.com/yarntime/hybridjob/pkg/tools"
 	"github.com/yarntime/hybridjob/pkg/types"
+	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -156,7 +157,7 @@ func resolveControllerRef(rfs []meta_v1.OwnerReference) (key string) {
 
 func (hjc *HybridJobController) enqueueController(obj interface{}) {
 	job := obj.(*types.HybridJob)
-	key := job.Namespace + "/" + job.Name
+	key := tools.GetKeyOfHybridJob(job)
 	hjc.queue.Add(key)
 }
 
@@ -209,7 +210,11 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 
 	hybridJob, err := hjc.hybridJobClient.Get(name, ns)
 	if err != nil {
-		glog.Warningf("Finished syncing hybrid job %q (%v)", key, time.Now().Sub(startTime))
+		glog.Warningf("Failed get hybrid job %q (%v) from kubernetes", key, time.Now().Sub(startTime))
+		if errors.IsNotFound(err) {
+			glog.V(4).Infof("Hybridjob has been deleted: %v", key)
+			return nil
+		}
 		return err
 	}
 
@@ -233,7 +238,9 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 	}
 
 	isRunning := 0
-	targetRunning := len(hybridJob.Spec.ReplicaSpecs)
+	isFinished := 0
+	isFailed := 0
+	targetNum := len(hybridJob.Spec.ReplicaSpecs)
 
 	hosts := map[types.TfReplicaType]string{}
 
@@ -259,6 +266,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		succeeded, failed := getStatus(pods)
 		phase := preStatus.Phase
 
+		// TODO: handle other cases
 		if active >= *tfReplica.MinReplicas && active <= *tfReplica.MaxReplicas && preStatus.Phase == types.Creating {
 			phase = types.Running
 			preStatus.Desired = active
@@ -272,12 +280,17 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 			}
 			isRunning++
 			hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
+			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaRunning", "Successful to start all containers in %s", string(tfReplica.TfReplicaType))
 		} else if desired != 0 && desired == succeeded && preStatus.Phase == types.Running {
 			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Finished
+			isFinished++
+			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaFinished", "Successful to run all containers in %s", string(tfReplica.TfReplicaType))
 		} else if desired != 0 && desired == failed && preStatus.Phase == types.Running {
 			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Failed
+			isFailed++
+			hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "TfReplicaFailed", "Failed to run container in %s", string(tfReplica.TfReplicaType))
 		}
 
 		if preStatus.Phase != phase {
@@ -289,12 +302,31 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		}
 	}
 
-	if isRunning == targetRunning {
+	if isRunning == targetNum {
 		changed = true
 		glog.V(4).Infof("Hybridjob(%s/%s) is Ready", hybridJob.Namespace, hybridJob.Name)
 		hybridJob.Status.Phase = types.Ready
 		hybridJob.Status.PSHosts = hosts[types.PS]
 		hybridJob.Status.WorkerHosts = hosts[types.WORKER]
+		time.Sleep(50 * time.Microsecond)
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "HybridJobReady", "Successful to start all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
+	}
+
+	if isFinished == targetNum {
+		changed = true
+		glog.V(4).Infof("Hybridjob(%s/%s) is Finished", hybridJob.Namespace, hybridJob.Name)
+		hybridJob.Status.Phase = types.Finished
+		time.Sleep(50 * time.Microsecond)
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "HybridJobFinished", "Finished to run all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
+	}
+
+	if isFailed > 0 {
+		changed = true
+		glog.V(4).Infof("Hybridjob(%s/%s) is Failed", hybridJob.Namespace, hybridJob.Name)
+		hybridJob.Status.Phase = types.Failed
+		time.Sleep(50 * time.Microsecond)
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "HybridJobFailed", "Failed to run all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
+		hjc.deleteAllPods(hybridJob)
 	}
 
 	if changed {
@@ -318,6 +350,19 @@ func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) error {
 		}
 		hj.Status.TfReplicaStatus[tfReplicaSpec.TfReplicaType] = &types.TfReplicaStatus{
 			Phase: types.Creating,
+		}
+	}
+	return nil
+}
+
+func (hjc *HybridJobController) deleteAllPods(hybridJob *types.HybridJob) error {
+	for _, tfReplica := range hybridJob.Spec.ReplicaSpecs {
+		pods, err := hjc.getPodsForTfReplica(hybridJob.Namespace, tfReplica)
+		if err != nil {
+			return err
+		}
+		for _, pod := range pods {
+			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{})
 		}
 	}
 	return nil
@@ -347,7 +392,7 @@ func (hjc *HybridJobController) updateHybridJob(hybridJob *types.HybridJob) erro
 }
 
 func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) error {
-	pod, err := GetPodFromTemplate(tfReplicaSpec.Template, hybridJob)
+	pod, err := GetPodFromTemplate(tfReplicaSpec, hybridJob)
 	if err != nil {
 		return err
 	}
@@ -378,10 +423,12 @@ func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hy
 	return nil
 }
 
-func GetPodFromTemplate(template *v1.PodTemplateSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
+func GetPodFromTemplate(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
+	template := tfReplicaSpec.Template
+	key := tools.GetKeyOfHybridJob(hybridJob)
 	desiredLabels := tools.GetPodsLabelSet(template)
 	desiredFinalizers := tools.GetPodsFinalizers(template)
-	desiredAnnotations, err := tools.GetPodsAnnotationSet(template)
+	desiredAnnotations, err := tools.GetPodsAnnotationSet(template, key, tfReplicaSpec.TfReplicaType)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +445,7 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, hybridJob *types.HybridJob
 		{
 			APIVersion: types.Version,
 			Kind:       types.HybridJobs,
-			Name:       hybridJob.Namespace + "/" + hybridJob.Name,
+			Name:       key,
 		},
 	}
 

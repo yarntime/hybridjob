@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"encoding/json"
+	"github.com/yarntime/hybridjob/pkg/types"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/rest"
@@ -10,7 +12,7 @@ import (
 )
 
 const (
-	SchedulingGroup string = "schedulinggroup"
+	SchedulingGroup string = "ecp-scheduling-group"
 )
 
 func GetClientConfig(host string) (*rest.Config, error) {
@@ -55,14 +57,19 @@ func GetPodsFinalizers(template *v1.PodTemplateSpec) []string {
 	return desiredFinalizers
 }
 
-func GetPodsAnnotationSet(template *v1.PodTemplateSpec) (labels.Set, error) {
+func GetPodsAnnotationSet(template *v1.PodTemplateSpec, key string, role types.TfReplicaType) (labels.Set, error) {
 	desiredAnnotations := make(labels.Set)
 	for k, v := range template.Annotations {
 		desiredAnnotations[k] = v
 	}
 
 	// TODO add scheduling group info to pod's annotation
-	desiredAnnotations[SchedulingGroup] = "test"
+	group := types.SchedulingGroup{
+		Group: key,
+		Role:  string(role),
+	}
+	data, _ := json.Marshal(&group)
+	desiredAnnotations[SchedulingGroup] = string(data)
 	return desiredAnnotations, nil
 }
 
@@ -73,6 +80,10 @@ func GenerateHosts(pods []v1.Pod) string {
 	}
 	rs := []rune(hosts)
 	return string(rs[0 : len(rs)-1])
+}
+
+func GetKeyOfHybridJob(hybridJob *types.HybridJob) string {
+	return hybridJob.Namespace + "/" + hybridJob.Name
 }
 
 func NewInt32(val int32) *int32 {
