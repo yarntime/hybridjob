@@ -55,6 +55,7 @@ type TfReplicaSpec struct {
 	NodeName      string                 `json:"nodeName,omitempty"`
 	MinReplicas   *int32                 `json:"min,omitempty"`
 	MaxReplicas   *int32                 `json:"max,omitempty"`
+	Priority      *int32                 `json:"priority,omitempty"`
 	Selector      *meta_v1.LabelSelector `json:"selector"`
 	Template      *v1.PodTemplateSpec    `json:"template,omitempty"`
 	TfReplicaType `json:"tfReplicaType"`
@@ -63,8 +64,7 @@ type TfReplicaSpec struct {
 type HybridJobStatus struct {
 	Phase           JobPhase                           `json:"phase,omitempty"`
 	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
-	PSHosts         string                             `json:"pshosts,omitempty"`
-	WorkerHosts     string                             `json:"workerhosts,omitempty"`
+	Hosts           map[TfReplicaType]string           `json:"hosts,omitempty"`
 	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfreplicaStatus"`
 }
 
@@ -86,7 +86,8 @@ type SchedulingGroup struct {
 	Group       string `json:"group"`
 	Role        string `json:"role"`
 	MinReplicas int32  `json:"minReplica"`
-	MaxReplicas int32  `json:maxReplica"`
+	MaxReplicas int32  `json:"maxReplica"`
+	Priority    int32  `json:"priority"`
 }
 
 // Create the CRD resource, ignore error if it already exists

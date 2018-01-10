@@ -57,7 +57,7 @@ func GetPodsFinalizers(template *v1.PodTemplateSpec) []string {
 	return desiredFinalizers
 }
 
-func GetPodsAnnotationSet(key string, tfReplicaSpec types.TfReplicaSpec) (labels.Set, error) {
+func GetPodsAnnotationSet(key string, tfReplicaSpec *types.TfReplicaSpec) (labels.Set, error) {
 	desiredAnnotations := make(labels.Set)
 	for k, v := range tfReplicaSpec.Template.Annotations {
 		desiredAnnotations[k] = v
@@ -68,6 +68,10 @@ func GetPodsAnnotationSet(key string, tfReplicaSpec types.TfReplicaSpec) (labels
 		Role:        string(tfReplicaSpec.TfReplicaType),
 		MinReplicas: *tfReplicaSpec.MinReplicas,
 		MaxReplicas: *tfReplicaSpec.MaxReplicas,
+	}
+
+	if tfReplicaSpec.Priority != nil {
+		group.Priority = *tfReplicaSpec.Priority
 	}
 	data, _ := json.Marshal(&group)
 	desiredAnnotations[SchedulingGroup] = string(data)

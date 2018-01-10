@@ -74,8 +74,11 @@ func NewController(config *Config) *HybridJobController {
 		&types.HybridJob{},
 		hjc.resyncPeriod,
 		cache.ResourceEventHandlerFuncs{
-			AddFunc:    hjc.enqueueController,
-			DeleteFunc: hjc.enqueueController,
+			AddFunc: hjc.enqueueController,
+			DeleteFunc: func(obj interface{}) {
+				job := obj.(*types.HybridJob)
+				hjc.deleteAllPods(job)
+			},
 			UpdateFunc: func(old, cur interface{}) {
 				if job := cur.(*types.HybridJob); !IsJobFinished(job) {
 					hjc.enqueueController(job)
@@ -220,7 +223,9 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		// only create pods
 		err := hjc.createAllPods(hybridJob)
 		if err != nil {
-			glog.Errorf("Failed to create pods to hybridjob %s/%s", hybridJob.Namespace, hybridJob.Name)
+			hybridJob.Status.Phase = types.Failed
+			glog.Errorf("Failed to create pods in hybridjob %s/%s", hybridJob.Namespace, hybridJob.Name)
+			hjc.recorder.Event(hybridJob, v1.EventTypeWarning, "HybridJobFailed", "Failed to create all pods")
 		}
 		return hjc.updateHybridJob(hybridJob)
 	}
@@ -235,8 +240,6 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 	isFailed := 0
 	targetNum := len(hybridJob.Spec.ReplicaSpecs)
 
-	hosts := map[types.TfReplicaType]string{}
-
 	for _, tfReplica := range hybridJob.Spec.ReplicaSpecs {
 
 		preStatus, ok := hybridJob.Status.TfReplicaStatus[tfReplica.TfReplicaType]
@@ -244,7 +247,12 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 			preStatus = &types.TfReplicaStatus{}
 		}
 
-		if preStatus.Phase == types.Finished || preStatus.Phase == types.Failed {
+		if preStatus.Phase == types.Finished {
+			isFinished++
+			continue
+		}
+
+		if preStatus.Phase == types.Failed {
 			continue
 		}
 
@@ -263,7 +271,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		if active >= *tfReplica.MinReplicas && active <= *tfReplica.MaxReplicas && preStatus.Phase == types.Creating {
 			phase = types.Running
 			preStatus.Desired = active
-			glog.V(4).Infof("Hybridjob(%s/%s:%s) is running, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			glog.V(4).Infof("TfReplica(%s/%s:%s) is running, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			pendingPods := FilterPendingPods(pods)
 			for _, pod := range pendingPods {
 				err = hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
@@ -271,19 +279,28 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 					glog.Errorf("Failed to delete pod %s/%s.", pod.Namespace, pod.Name)
 				}
 			}
-			isRunning++
-			hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
+			if hybridJob.Status.Hosts == nil {
+				hybridJob.Status.Hosts = make(map[types.TfReplicaType]string)
+			}
+			hybridJob.Status.Hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
 			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaRunning", "Successful to start all containers in %s", string(tfReplica.TfReplicaType))
 		} else if desired != 0 && desired == succeeded && preStatus.Phase == types.Running {
-			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			glog.V(4).Infof("TfReplica(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Finished
-			isFinished++
 			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaFinished", "Successful to run all containers in %s", string(tfReplica.TfReplicaType))
 		} else if desired != 0 && desired == failed && preStatus.Phase == types.Running {
-			glog.V(4).Infof("Hybridjob(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+			glog.V(4).Infof("TfReplica(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
 			phase = types.Failed
 			isFailed++
 			hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "TfReplicaFailed", "Failed to run container in %s", string(tfReplica.TfReplicaType))
+		}
+
+		if phase == types.Running {
+			isRunning++
+		}
+
+		if phase == types.Finished {
+			isFinished++
 		}
 
 		if preStatus.Phase != phase {
@@ -295,17 +312,15 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		}
 	}
 
-	if isRunning == targetNum {
+	if isRunning == targetNum && hybridJob.Status.Phase != types.Ready {
 		changed = true
 		glog.V(4).Infof("Hybridjob(%s/%s) is Ready", hybridJob.Namespace, hybridJob.Name)
 		hybridJob.Status.Phase = types.Ready
-		hybridJob.Status.PSHosts = hosts[types.PS]
-		hybridJob.Status.WorkerHosts = hosts[types.WORKER]
 		time.Sleep(50 * time.Microsecond)
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "HybridJobReady", "Successful to start all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
 	}
 
-	if isFinished == targetNum {
+	if isFinished == targetNum && hybridJob.Status.Phase != types.Finished {
 		changed = true
 		glog.V(4).Infof("Hybridjob(%s/%s) is Finished", hybridJob.Namespace, hybridJob.Name)
 		hybridJob.Status.Phase = types.Finished
@@ -313,7 +328,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "HybridJobFinished", "Finished to run all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
 	}
 
-	if isFailed > 0 {
+	if isFailed > 0 && hybridJob.Status.Phase != types.Failed {
 		changed = true
 		glog.V(4).Infof("Hybridjob(%s/%s) is Failed", hybridJob.Namespace, hybridJob.Name)
 		hybridJob.Status.Phase = types.Failed
@@ -332,20 +347,36 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 func (hjc *HybridJobController) createAllPods(hj *types.HybridJob) error {
 	commonLabels := hj.ObjectMeta.Labels
 	hj.Status.TfReplicaStatus = make(map[types.TfReplicaType]*types.TfReplicaStatus)
+	createdPods := []*v1.Pod{}
 	for _, tfReplicaSpec := range hj.Spec.ReplicaSpecs {
 		selector := &meta_v1.LabelSelector{
-			MatchLabels: commonLabels,
+			MatchLabels: make(map[string]string),
+		}
+		for k, v := range commonLabels {
+			selector.MatchLabels[k] = v
 		}
 		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
-			hjc.createPod(tfReplicaSpec, hj, index)
+			pod, err := hjc.createPod(tfReplicaSpec, hj, index)
+			if err != nil {
+				hjc.deleteCreatedPods(hj, createdPods)
+				return err
+			}
+			createdPods = append(createdPods, pod)
 		}
 		hj.Status.TfReplicaStatus[tfReplicaSpec.TfReplicaType] = &types.TfReplicaStatus{
 			Phase: types.Creating,
 		}
 	}
 	return nil
+}
+
+func (hjc *HybridJobController) deleteCreatedPods(hj *types.HybridJob, pods []*v1.Pod) {
+	for _, pod := range pods {
+		hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
+		hjc.recorder.Eventf(hj, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
+	}
 }
 
 func (hjc *HybridJobController) deleteAllPods(hybridJob *types.HybridJob) error {
@@ -356,6 +387,7 @@ func (hjc *HybridJobController) deleteAllPods(hybridJob *types.HybridJob) error 
 		}
 		for _, pod := range pods {
 			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{})
+			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
 		}
 	}
 	return nil
@@ -384,10 +416,10 @@ func (hjc *HybridJobController) updateHybridJob(hybridJob *types.HybridJob) erro
 	return nil
 }
 
-func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) error {
+func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) (*v1.Pod, error) {
 	pod, err := GetPodFromTemplate(tfReplicaSpec, hybridJob)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	pod.Name = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-" + strconv.Itoa(int(index))
@@ -403,17 +435,19 @@ func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hy
 	}
 
 	if labels.Set(pod.Labels).AsSelectorPreValidated().Empty() {
-		return fmt.Errorf("unable to create pods, no labels")
+		return nil, fmt.Errorf("unable to create pods, no labels")
 	}
 
-	if newPod, err := hjc.k8sClient.CoreV1().Pods(hybridJob.Namespace).Create(pod); err != nil {
+	newPod, err := hjc.k8sClient.CoreV1().Pods(hybridJob.Namespace).Create(pod)
+
+	if err != nil {
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "FailedCreate", "Error creating: %v", err)
-		return fmt.Errorf("unable to create pods: %v", err)
+		return nil, fmt.Errorf("unable to create pods: %v", err)
 	} else {
 		glog.V(4).Infof("Controller %v created pod %v", types.HybridJobs, newPod.Name)
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulCreate", "Created pod: %v", newPod.Name)
 	}
-	return nil
+	return newPod, nil
 }
 
 func GetPodFromTemplate(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
