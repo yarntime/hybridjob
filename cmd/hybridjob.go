@@ -17,7 +17,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&apiserver_address, "apiServerAddress", "192.168.254.45:8080", "kubernetes apiserver address")
+	flag.StringVar(&apiserver_address, "apiServerAddress", "192.168.254.44:8080", "kubernetes apiserver address")
 	flag.IntVar(&concurrentJobHandlers, "concurrentJobHandlers", 4, "Concurrent job handlers")
 	flag.DurationVar(&resyncPeriod, "resync period", time.Minute*30, "resync period")
 	flag.StringVar(&serve_address, "serve address", "0.0.0.0", "serve address")

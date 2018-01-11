@@ -32,12 +32,13 @@ const (
 type JobPhase string
 
 const (
-	Creating JobPhase = "Creating"
-	Running  JobPhase = "Running"
-	Ready    JobPhase = "Ready"
-	UnReady  JobPhase = "UnReady"
-	Finished JobPhase = "Finished"
-	Failed   JobPhase = "Failed"
+	Creating  JobPhase = "Creating"
+	Scheduled JobPhase = "Scheduled"
+	Running   JobPhase = "Running"
+	Ready     JobPhase = "Ready"
+	UnReady   JobPhase = "UnReady"
+	Finished  JobPhase = "Finished"
+	Failed    JobPhase = "Failed"
 )
 
 type HybridJob struct {
@@ -66,6 +67,7 @@ type HybridJobStatus struct {
 	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
 	Hosts           map[TfReplicaType]string           `json:"hosts,omitempty"`
 	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfreplicaStatus"`
+	IsChanged       bool
 }
 
 type TfReplicaStatus struct {

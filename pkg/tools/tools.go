@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"github.com/golang/glog"
 	"github.com/yarntime/hybridjob/pkg/types"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/pkg/api/v1"
@@ -89,6 +90,71 @@ func GenerateHosts(pods []v1.Pod) string {
 
 func GetKeyOfHybridJob(hybridJob *types.HybridJob) string {
 	return hybridJob.Namespace + "/" + hybridJob.Name
+}
+
+func FilterActivePods(pods []v1.Pod) []v1.Pod {
+	var result []v1.Pod
+	for _, p := range pods {
+		if IsPodActive(p) {
+			result = append(result, p)
+		} else {
+			glog.V(4).Infof("Ignoring inactive pod %v/%v in state %v, deletion time %v",
+				p.Namespace, p.Name, p.Status.Phase, p.DeletionTimestamp)
+		}
+	}
+	return result
+}
+
+func FilterAssignedPods(pods []v1.Pod) ([]v1.Pod, []v1.Pod) {
+	assignedPods := []v1.Pod{}
+	unassignedPods := []v1.Pod{}
+	for _, pod := range pods {
+		if pod.Spec.NodeName != "" {
+			assignedPods = append(assignedPods, pod)
+		} else {
+			unassignedPods = append(unassignedPods, pod)
+		}
+	}
+	return assignedPods, unassignedPods
+}
+
+func IsPodActive(p v1.Pod) bool {
+	return v1.PodRunning == p.Status.Phase &&
+		p.DeletionTimestamp == nil
+}
+
+func FilterPendingPods(pods []v1.Pod) []v1.Pod {
+	var result []v1.Pod
+	for _, p := range pods {
+		if IsPodPending(p) {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func IsPodPending(p v1.Pod) bool {
+	return v1.PodPending == p.Status.Phase &&
+		p.DeletionTimestamp == nil
+}
+
+func IsJobFinished(hj *types.HybridJob) bool {
+	if hj.Status.Phase == types.Finished || hj.Status.Phase == types.Failed {
+		return true
+	}
+	return false
+}
+
+func IsJobScheduled(hj *types.HybridJob) bool {
+	if hj.Status.Phase == types.Scheduled {
+		return true
+	}
+	return false
+}
+
+func SetHybridJobPhase(hj *types.HybridJob, phase types.JobPhase) {
+	hj.Status.Phase = phase
+	hj.Status.IsChanged = true
 }
 
 func NewInt32(val int32) *int32 {
