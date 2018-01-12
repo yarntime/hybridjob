@@ -7,33 +7,43 @@ metadata:
   namespace: default
 spec:
   replicaSpecs:
-  - max: 1
+  - max: 10
     min: 1
+    priority: 1
     template:
       spec:
         containers:
         - image: nginx:1.3
           name: ps
-          command: ["sleep", "120"]
+          command: ["sleep", "150"]
           ports:
           - containerPort: 80
             name: http
             protocol: TCP
-          resources: {}
+          resources: 
+            limits:
+              cpu: 3
+            requests:
+              cpu: 3
         restartPolicy: Never
     tfReplicaType: ps
-  - max: 1
+  - max: 2
     min: 1
+    priority: 2
     template:
       spec:
         containers:
         - image: nginx:1.3
           name: worker
-          command: ["sleep", "120"]
+          command: ["sleep", "130"]
           ports:
           - containerPort: 80
             name: http
             protocol: TCP
-          resources: {}
+          resources: 
+            limits:
+              cpu: 3
+            requests:
+              cpu: 3
         restartPolicy: Never
     tfReplicaType: worker

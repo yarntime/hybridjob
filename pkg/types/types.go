@@ -66,7 +66,7 @@ type HybridJobStatus struct {
 	Phase           JobPhase                           `json:"phase,omitempty"`
 	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
 	Hosts           map[TfReplicaType]string           `json:"hosts,omitempty"`
-	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfreplicaStatus"`
+	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfReplicaStatus"`
 	IsChanged       bool
 }
 
@@ -87,6 +87,7 @@ type HybridJobList struct {
 type SchedulingGroup struct {
 	Group       string `json:"group"`
 	Role        string `json:"role"`
+	RoleCount   int32  `json:"roleCount"`
 	MinReplicas int32  `json:"minReplica"`
 	MaxReplicas int32  `json:"maxReplica"`
 	Priority    int32  `json:"priority"`

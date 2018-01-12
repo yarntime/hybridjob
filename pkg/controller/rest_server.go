@@ -10,6 +10,16 @@ import (
 	"strconv"
 )
 
+var (
+	errFailToReadResponse  = restful.NewError(http.StatusBadRequest, "unable to get hybrid job")
+	errFailToWriteResponse = restful.NewError(http.StatusInternalServerError, "unable to write response")
+)
+
+// errorResponse creates an error response from the given error
+func errorResponse(res *restful.Response, err restful.ServiceError) {
+	res.WriteServiceError(err.Code, err)
+}
+
 type RestServer struct {
 	address         string
 	port            int
@@ -46,10 +56,11 @@ func (rs *RestServer) GetJobStatus(req *restful.Request, res *restful.Response) 
 	name := req.PathParameter("name")
 	hybridJob, err := rs.hybridJobClient.Get(name, namespace)
 	if err != nil {
-		res.WriteErrorString(http.StatusInternalServerError, err.Error())
+		errorResponse(res, errFailToReadResponse)
+		return
 	}
 	if err := res.WriteEntity(hybridJob.Status); err != nil {
-		res.WriteErrorString(http.StatusInternalServerError, err.Error())
+		errorResponse(res, errFailToWriteResponse)
 	}
 }
 
