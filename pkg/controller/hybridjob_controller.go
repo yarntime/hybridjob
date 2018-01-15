@@ -27,6 +27,7 @@ import (
 const (
 	Role           = "ecp-role"
 	Scheduled      = "scheduled"
+	Cause          = "cause"
 	OwnerReference = "ecp-owner-reference"
 )
 
@@ -351,6 +352,13 @@ func (hjc *HybridJobController) isJobScheduled(hj *types.HybridJob) (bool, error
 	if err != nil {
 		glog.Warningf("Failed to parse scheduled to bool %s", scheduled)
 		return false, err
+	}
+
+	if !result {
+		cause, ok := conf.Data[Cause]
+		if ok {
+			hjc.recorder.Event(hj, v1.EventTypeWarning, "ScheduleFailCause", cause)
+		}
 	}
 	return result, nil
 }

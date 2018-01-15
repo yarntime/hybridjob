@@ -17,14 +17,11 @@ var (
 )
 
 func init() {
-	flag.StringVar(&apiserver_address, "apiServerAddress", "192.168.254.44:8080", "kubernetes apiserver address")
+	flag.StringVar(&apiserver_address, "apiServerAddress", "", "kubernetes apiserver address")
 	flag.IntVar(&concurrentJobHandlers, "concurrentJobHandlers", 4, "Concurrent job handlers")
 	flag.DurationVar(&resyncPeriod, "resync period", time.Minute*30, "resync period")
 	flag.StringVar(&serve_address, "serve address", "0.0.0.0", "serve address")
 	flag.IntVar(&serve_port, "serve port", 8080, "serve port")
-	// TODO remove alsologtostderr and v later
-	flag.Set("alsologtostderr", "true")
-	flag.Set("v", "4")
 	flag.Parse()
 }
 
