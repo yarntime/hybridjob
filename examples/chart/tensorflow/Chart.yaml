@@ -1,0 +1,10 @@
+description: Chart for tensorflow with pv support
+keywords:
+- tensorflow
+maintainers:
+- email: yarntime@163.com
+  name: Zhang Wei
+name: tensorflow
+sources:
+- https://github.com/tensorflow/tensorflow
+version: 1.1.0

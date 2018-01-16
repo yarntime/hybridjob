@@ -1,0 +1,185 @@
+## See https://github.com/tensorflow/tensorflow for more information on implementation
+isNewTemplate: true
+
+persistence:
+    name: "storage"
+    description: "Persistent Storage"
+    type: "string"
+    required: true
+    variables:
+      pvc:
+        name: "pvc"
+        label: "PVC name"
+        description: "The name of the persistent volume claim"
+        required: true
+        value: "mnist"
+        type: "string"
+      mountPath:
+        name: "mountPath"
+        label: "mount path"
+        description: "The path within the container at which the volume should be mounted"
+        required: true
+        value: "/data"
+        type: "string"
+      dataDir:
+        name: "dataDir"
+        label: "data dir"
+        description: "The path to load the input data"
+        required: true
+        value: "/data/input"
+        type: "string"
+      modelDir:
+        name: "modelDir"
+        label: "model dir"
+        description: "The path to save the model"
+        required: true
+        value: "/data/model"
+        type: "string"
+      logDir:
+        name: "logDir"
+        label: "log dir"
+        description: "The path to save the logs"
+        required: true
+        value: "/data/log"
+        type: "string"
+
+rbac:
+    name: "rbac"
+    description: "Role Based Access Control"
+    type: "string"
+    required: true
+    variables:
+      roleRef:
+        name: "roleRef"
+        label: "roleRef"
+        description: "The cluster role to be bound to this application"
+        required: true
+        value: "cluster-admin"
+        type: "string"
+
+cmd:
+    name: "command"
+    description: "Command"
+    type: "string"
+    required: true
+    variables:
+      cmd:
+        name: "cmd"
+        label: "CMD"
+        description: "The command to start the training job"
+        required: true
+        value: "python /data/code/mnist.py --model_version=1"
+        type: "string"
+
+version:
+    name: "version"
+    description: "tensorflow version"
+    type: "string"
+    required: true
+    variables:
+      version:
+        name: "version"
+        label: "tensorflow version"
+        description: "The version of tensorflow"
+        required: true
+        value: "4.2"
+        type: "string"
+
+tensorboard:
+    name: "tensorboard"
+    description: "Tensorboard"
+    type: "checkbox"
+    required: true
+    enabled: false
+    variables:
+      replicaCount:
+        name: "replicaCount"
+        label: "replicaCount"
+        description: "The replica number of tensorboard"
+        required: true
+        value: 1
+        type: "int"
+      cpuRequest:
+        name: "cpuRequest"
+        label: "cpu(m)"
+        description: "CPU, in cores. (500m = 0.5 cores)"
+        required: true
+        value: 100
+        type: "int"
+      memoryRequest:
+        name: "memoryRequest"
+        label: "memory(MB)"
+        description: "Memory, in MB. (1GB = 1024 MB)"
+        required: true
+        value: 512
+        type: "int"
+
+ps:
+    name: "ps"
+    description: "Parameter Server"
+    type: "string"
+    required: true
+    variables:
+      minReplicaCount:
+        name: "minReplicaCount"
+        label: "minreplicaCount"
+        description: "The min replica number of parameter server"
+        required: true
+        value: 1
+        type: "int"
+      maxReplicaCount:
+        name: "maxReplicaCount"
+        label: "maxreplicaCount"
+        description: "The max replica number of parameter server"
+        required: true
+        value: 3
+        type: "int"
+      cpuRequest:
+        name: "cpuRequest"
+        label: "cpu(m)"
+        description: "CPU, in cores. (500m = 0.5 cores)"
+        required: true
+        value: 100
+        type: "int"
+      memoryRequest:
+        name: "memoryRequest"
+        label: "memory(MB)"
+        description: "Memory, in MB. (1GB = 1024 MB)"
+        required: true
+        value: 512
+        type: "int"
+  
+worker:
+    name: "worker"
+    description: "Worker"
+    type: "string"
+    required: true
+    variables:
+      minReplicaCount:
+        name: "minReplicaCount"
+        label: "minreplicaCount"
+        description: "The min replica number of worker"
+        required: true
+        value: 1
+        type: "int"
+      maxReplicaCount:
+        name: "maxReplicaCount"
+        label: "maxreplicaCount"
+        description: "The max replica number of worker"
+        required: true
+        value: 3
+        type: "int"
+      cpuRequest:
+        name: "cpuRequest"
+        label: "cpu(m)"
+        description: "CPU, in cores. (500m = 0.5 cores)"
+        required: true
+        value: 1000
+        type: "int"
+      memoryRequest:
+        name: "memoryRequest"
+        label: "memory(MB)"
+        description: "Memory, in MB. (1GB = 1024 MB)"
+        required: true
+        value: 512
+        type: "int"

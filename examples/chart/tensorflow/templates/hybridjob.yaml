@@ -1,0 +1,92 @@
+apiVersion: rivernet.io/v1
+kind: HybridJob
+metadata:
+  name: {{ .Release.Name }}-job
+  labels:
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    release: {{ .Release.Name }}
+spec:
+  replicaSpecs:
+  - max: {{ .Values.ps.variables.maxReplicaCount.value }}
+    min: {{ .Values.ps.variables.minReplicaCount.value }}
+    priority: 1
+    template:
+      spec:
+        restartPolicy: Never
+        containers:
+          - image: registry.harbor:5000/sky-firmament/tensorflow:{{ .Values.version.variables.version.value }}
+            name: ps
+            command: ["bootstrap"]
+            args:
+            - --role=ps
+            - --job_name={{ .Release.Name }}-job
+            - --cmd={{ .Values.cmd.variables.cmd.value }} --data_dir={{ .Values.persistence.variables.dataDir.value }} --model_dir={{ .Values.persistence.variables.modelDir.value }}
+            env:
+              - name: PYTHONUNBUFFERED
+                value: '1'
+              - name: POD_IP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.podIP
+              - name: NAMESPACE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+              - name: LOG_DIR
+                value: {{ .Values.persistence.variables.logDir.value }}
+            ports:
+            - containerPort: 2222
+            resources:
+              requests:
+                cpu: {{ .Values.ps.variables.cpuRequest.value }}m
+                memory: {{ .Values.ps.variables.memoryRequest.value }}Mi
+            volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.variables.mountPath.value }}
+        volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.variables.pvc.value }}
+        restartPolicy: Never
+    tfReplicaType: ps
+  - max: {{ .Values.worker.variables.maxReplicaCount.value }}
+    min: {{ .Values.worker.variables.minReplicaCount.value }}
+    priority: 2
+    template:
+      spec:
+        restartPolicy: Never
+        containers:
+          - image: registry.harbor:5000/sky-firmament/tensorflow:{{ .Values.version.variables.version.value }}
+            name: ps
+            command: ["bootstrap"]
+            args:
+            - --role=worker
+            - --job_name={{ .Release.Name }}-job
+            - --cmd={{ .Values.cmd.variables.cmd.value }} --data_dir={{ .Values.persistence.variables.dataDir.value }} --model_dir={{ .Values.persistence.variables.modelDir.value }}
+            env:
+              - name: PYTHONUNBUFFERED
+                value: '1'
+              - name: POD_IP
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.podIP
+              - name: NAMESPACE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+              - name: LOG_DIR
+                value: {{ .Values.persistence.variables.logDir.value }}
+            ports:
+            - containerPort: 2222
+            resources:
+              requests:
+                cpu: {{ .Values.worker.variables.cpuRequest.value }}m
+                memory: {{ .Values.worker.variables.memoryRequest.value }}Mi
+            volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.variables.mountPath.value }}
+        volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.variables.pvc.value }}
+    tfReplicaType: worker
