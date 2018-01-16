@@ -258,6 +258,9 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 
 	if hybridJob.Status.StartTime == nil {
 		now := meta_v1.Now()
+		hybridJob.Spec.Selector = &meta_v1.LabelSelector{
+			MatchLabels: hybridJob.ObjectMeta.Labels,
+		}
 		hybridJob.Status.StartTime = &now
 		hybridJob.Status.Phase = types.Creating
 

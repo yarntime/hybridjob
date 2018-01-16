@@ -49,7 +49,8 @@ type HybridJob struct {
 }
 
 type HybridJobSpec struct {
-	ReplicaSpecs []*TfReplicaSpec `json:"replicaSpecs"`
+	Selector     *meta_v1.LabelSelector `json:"selector"`
+	ReplicaSpecs []*TfReplicaSpec       `json:"replicaSpecs"`
 }
 
 type TfReplicaSpec struct {

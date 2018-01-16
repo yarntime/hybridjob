@@ -41,7 +41,7 @@ func (rs *RestServer) Register(container *restful.Container) {
 		Consumes(restful.MIME_JSON).
 		Produces(restful.MIME_JSON) // you can specify this per route as well
 
-	ws.Route(ws.GET("/namespaces/{namespace}/hybridjob/{name}/status").To(rs.GetJobStatus).
+	ws.Route(ws.GET("/namespaces/{namespace}/hybridjobs/{name}/status").To(rs.GetJobStatus).
 		Doc("get hybrid job status").
 		Operation("get hybrid job status").
 		Param(ws.PathParameter("namespace", "the namespace of the target hybrid job")).
