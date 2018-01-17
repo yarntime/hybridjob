@@ -1,10 +1,11 @@
 apiVersion: rivernet.io/v1
 kind: HybridJob
 metadata:
-  name: {{ .Release.Name }}-job
+  name: {{ .Release.Name }}
   labels:
     chart: {{ .Chart.Name }}-{{ .Chart.Version }}
     release: {{ .Release.Name }}
+    role: "hybridjob"
 spec:
   replicaSpecs:
   - max: {{ .Values.ps.variables.maxReplicaCount.value }}
@@ -19,7 +20,7 @@ spec:
             command: ["bootstrap"]
             args:
             - --role=ps
-            - --job_name={{ .Release.Name }}-job
+            - --job_name={{ .Release.Name }}
             - --cmd={{ .Values.cmd.variables.cmd.value }} --data_dir={{ .Values.persistence.variables.dataDir.value }} --model_dir={{ .Values.persistence.variables.modelDir.value }}
             env:
               - name: PYTHONUNBUFFERED
@@ -57,11 +58,11 @@ spec:
         restartPolicy: Never
         containers:
           - image: registry.harbor:5000/sky-firmament/tensorflow:{{ .Values.version.variables.version.value }}
-            name: ps
+            name: worker
             command: ["bootstrap"]
             args:
             - --role=worker
-            - --job_name={{ .Release.Name }}-job
+            - --job_name={{ .Release.Name }}
             - --cmd={{ .Values.cmd.variables.cmd.value }} --data_dir={{ .Values.persistence.variables.dataDir.value }} --model_dir={{ .Values.persistence.variables.modelDir.value }}
             env:
               - name: PYTHONUNBUFFERED

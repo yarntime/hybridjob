@@ -35,7 +35,7 @@ spec:
     spec:
       containers:
         - name: tensorboard
-          image: "{{ .Values.tensorboard.variables.image.value }}"
+          image: registry.harbor:5000/sky-firmament/tensorflow:{{ .Values.version.variables.version.value }}
           command: ["tensorboard"]
           args:
           - --logdir={{ .Values.persistence.variables.logDir.value }}
@@ -51,6 +51,6 @@ spec:
             mountPath: {{ .Values.persistence.variables.mountPath.value }}
       volumes:
       - name: data
-        hostPath:
-          path: {{ default "" .Values.persistence.variables.hostPath.value | quote }}
+        persistentVolumeClaim:
+          claimName: {{ .Values.persistence.variables.pvc.value }}
 {{- end -}}
