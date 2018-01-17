@@ -10,17 +10,10 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 )
-
-func NewClientset(config *rest.Config) (*apiextcs.Clientset, error) {
-	c, err := apiextcs.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-	return c, nil
-}
 
 func NewHybridJobClient(address string) *HybridJobClient {
 
@@ -29,7 +22,7 @@ func NewHybridJobClient(address string) *HybridJobClient {
 		panic(err.Error())
 	}
 
-	c, _ := NewClientset(config)
+	c, _ := newClientset(config)
 
 	err = types.CreateHybridJob(c)
 	if err != nil {
@@ -43,6 +36,14 @@ func NewHybridJobClient(address string) *HybridJobClient {
 
 	return &HybridJobClient{cl: crdcs, plural: v1.HybridJobs, scheme: scheme,
 		codec: runtime.NewParameterCodec(scheme)}
+}
+
+func newClientset(config *rest.Config) (*apiextcs.Clientset, error) {
+	c, err := apiextcs.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+	return c, nil
 }
 
 type HybridJobClient struct {
@@ -92,10 +93,18 @@ func (f *HybridJobClient) Get(name string, namespace string) (*v1.HybridJob, err
 	return &result, err
 }
 
-func (f *HybridJobClient) List(opts meta_v1.ListOptions) (*v1.HybridJobList, error) {
+func (f *HybridJobClient) Watch(opts meta_v1.ListOptions) (watch.Interface, error) {
+	opts.Watch = true
+	return f.cl.Get().
+		Namespace("").Resource(f.plural).
+		VersionedParams(&opts, f.codec).
+		Watch()
+}
+
+func (f *HybridJobClient) List(namespace string, opts meta_v1.ListOptions) (*v1.HybridJobList, error) {
 	var result v1.HybridJobList
 	err := f.cl.Get().
-		Namespace("").Resource(f.plural).
+		Namespace(namespace).Resource(f.plural).
 		VersionedParams(&opts, f.codec).
 		Do().Into(&result)
 	return &result, err

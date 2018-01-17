@@ -334,7 +334,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		tools.SetHybridJobPhase(hybridJob, types.Failed)
 		time.Sleep(50 * time.Microsecond)
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "HybridJobFailed", "Failed to run all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
-		hjc.deleteAllResources(hybridJob)
+		//	hjc.deleteAllResources(hybridJob)
 	}
 
 	if hybridJob.Status.IsChanged {
@@ -419,12 +419,22 @@ func (hjc *HybridJobController) createPods(hj *types.HybridJob) error {
 		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
-			pod, err := hjc.createPod(tfReplicaSpec, hj, index)
-			if err != nil {
-				hjc.deleteCreatedPods(hj, createdPods)
-				return err
+			retryTimes := 5
+			for {
+				pod, err := hjc.createPod(tfReplicaSpec, hj, index)
+				if err != nil {
+					if retryTimes > 0 {
+						retryTimes--
+						time.Sleep(2 * time.Second)
+						continue
+					} else {
+						hjc.deleteCreatedPods(hj, createdPods)
+						return err
+					}
+				}
+				createdPods = append(createdPods, pod)
+				break
 			}
-			createdPods = append(createdPods, pod)
 		}
 		hj.Status.TfReplicaStatus[tfReplicaSpec.TfReplicaType] = &types.TfReplicaStatus{
 			Phase: types.Creating,
@@ -510,7 +520,7 @@ func (hjc *HybridJobController) deleteCreatedPods(hj *types.HybridJob, pods []*v
 
 func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) error {
 
-	err := hjc.k8sClient.ConfigMaps(hybridJob.Namespace).Delete(hybridJob.Name, &meta_v1.DeleteOptions{})
+	err := hjc.k8sClient.ConfigMaps(hybridJob.Namespace).Delete(hybridJob.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
 
 	if err == nil {
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted ConfigMap: %s", hybridJob.Name)
@@ -522,7 +532,7 @@ func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) e
 			return err
 		}
 		for _, pod := range pods {
-			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{})
+			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
 			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
 		}
 	}
