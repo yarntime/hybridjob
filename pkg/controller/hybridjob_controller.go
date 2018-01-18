@@ -568,7 +568,7 @@ func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hy
 		return nil, err
 	}
 
-	pod.Name = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-" + strconv.Itoa(int(index))
+	pod.GenerateName = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-"
 
 	if len(tfReplicaSpec.NodeName) != 0 {
 		pod.Spec.NodeName = tfReplicaSpec.NodeName
