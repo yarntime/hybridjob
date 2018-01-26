@@ -17,8 +17,8 @@ spec:
     release: {{ .Release.Name }}
     role: tensorboard
 ---
-apiVersion: v1
-kind: ReplicationController
+apiVersion: extensions/v1beta1
+kind: Deployment
 metadata:
   name: {{ template "fullname" . }}
   labels:
@@ -44,6 +44,9 @@ spec:
           - containerPort: 6006
           resources:
             requests:
+              cpu: {{ .Values.tensorboard.variables.cpuRequest.value }}m
+              memory: {{ .Values.tensorboard.variables.memoryRequest.value }}Mi
+            limits:
               cpu: {{ .Values.tensorboard.variables.cpuRequest.value }}m
               memory: {{ .Values.tensorboard.variables.memoryRequest.value }}Mi
           volumeMounts: 
