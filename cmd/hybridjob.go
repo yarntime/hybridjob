@@ -9,33 +9,33 @@ import (
 )
 
 var (
-	apiserver_address     string
+	apiserverAddress      string
 	concurrentJobHandlers int
 	resyncPeriod          time.Duration
-	serve_address         string
-	serve_port            int
+	serveAddress          string
+	servePort             int
 )
 
 func init() {
-	flag.StringVar(&apiserver_address, "apiServerAddress", "", "kubernetes apiserver address")
-	flag.IntVar(&concurrentJobHandlers, "concurrentJobHandlers", 4, "Concurrent job handlers")
-	flag.DurationVar(&resyncPeriod, "resync period", time.Minute*30, "resync period")
-	flag.StringVar(&serve_address, "serve address", "0.0.0.0", "serve address")
-	flag.IntVar(&serve_port, "serve port", 8080, "serve port")
+	flag.StringVar(&apiserverAddress, "apiserver_address", "", "Kubernetes apiserver address")
+	flag.IntVar(&concurrentJobHandlers, "concurrent_job_handlers", 4, "Concurrent job handlers")
+	flag.DurationVar(&resyncPeriod, "resync_period", time.Minute*30, "Resync period")
+	flag.StringVar(&serveAddress, "serve_address", "0.0.0.0", "Serve address")
+	flag.IntVar(&servePort, "serve_port", 8080, "Serve port")
 	flag.Parse()
 }
 
 func main() {
 	stop := make(chan struct{})
 	config := &c.Config{
-		Address:               apiserver_address,
+		Address:               apiserverAddress,
 		ConcurrentJobHandlers: concurrentJobHandlers,
 		ResyncPeriod:          resyncPeriod,
 		StopCh:                stop,
-		ServeAddress:          serve_address,
-		ServePort:             serve_port,
-		K8sClient:             client.NewK8sClint(apiserver_address),
-		HybridJobClient:       client.NewHybridJobClient(apiserver_address),
+		ServeAddress:          serveAddress,
+		ServePort:             servePort,
+		K8sClient:             client.NewK8sClint(apiserverAddress),
+		HybridJobClient:       client.NewHybridJobClient(apiserverAddress),
 	}
 	hybridJobController := c.NewController(config)
 	go hybridJobController.Run(stop)
