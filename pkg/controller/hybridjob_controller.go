@@ -334,7 +334,7 @@ func (hjc HybridJobController) processHybridJob(key string) error {
 		tools.SetHybridJobPhase(hybridJob, types.Failed)
 		time.Sleep(50 * time.Microsecond)
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "HybridJobFailed", "Failed to run all containers in %s", tools.GetKeyOfHybridJob(hybridJob))
-		//	hjc.deleteAllResources(hybridJob)
+		hjc.deleteAllResources(hybridJob)
 	}
 
 	if hybridJob.Status.IsChanged {
@@ -391,7 +391,7 @@ func (hjc *HybridJobController) createConfigMap(hj *types.HybridJob) error {
 					APIVersion: types.Version,
 					Kind:       types.HybridJobs,
 					Name:       tools.GetKeyOfHybridJob(hj),
-					UID:        *meta_v1.NewUIDPreconditions(hj.Name).UID,
+					UID:        hj.UID,
 				},
 			},
 		},
@@ -514,7 +514,6 @@ func (hjc *HybridJobController) deleteCreatedPods(hj *types.HybridJob, pods []*v
 func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) error {
 
 	err := hjc.k8sClient.ConfigMaps(hybridJob.Namespace).Delete(hybridJob.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
-
 	if err == nil {
 		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted ConfigMap: %s", hybridJob.Name)
 	}
@@ -525,8 +524,11 @@ func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) e
 			return err
 		}
 		for _, pod := range pods {
-			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
-			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
+			if tools.IsOwnerOfThePod(hybridJob, pod) {
+				glog.V(4).Infof("Pod %s/%s to be delete cause by the hybridjob had been deleted", pod.Namespace, pod.Name)
+				hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
+				hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
+			}
 		}
 	}
 	return nil
@@ -611,7 +613,7 @@ func GetPodFromTemplate(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.Hyb
 			APIVersion: types.Version,
 			Kind:       types.HybridJobs,
 			Name:       key,
-			UID:        *meta_v1.NewUIDPreconditions(hybridJob.Name).UID,
+			UID:        hybridJob.UID,
 		},
 	}
 

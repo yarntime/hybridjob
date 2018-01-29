@@ -158,6 +158,15 @@ func SetHybridJobPhase(hj *types.HybridJob, phase types.JobPhase) {
 	hj.Status.IsChanged = true
 }
 
+func IsOwnerOfThePod(hj *types.HybridJob, pod v1.Pod) bool {
+	for _, owner := range pod.OwnerReferences {
+		if owner.UID == hj.UID {
+			return true
+		}
+	}
+	return false
+}
+
 func NewInt32(val int32) *int32 {
 	p := new(int32)
 	*p = val
