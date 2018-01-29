@@ -419,18 +419,11 @@ func (hjc *HybridJobController) createPods(hj *types.HybridJob) error {
 		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
-			retryTimes := 5
 			for {
 				pod, err := hjc.createPod(tfReplicaSpec, hj, index)
 				if err != nil {
-					if retryTimes > 0 {
-						retryTimes--
-						time.Sleep(2 * time.Second)
-						continue
-					} else {
-						hjc.deleteCreatedPods(hj, createdPods)
-						return err
-					}
+					hjc.deleteCreatedPods(hj, createdPods)
+					return err
 				}
 				createdPods = append(createdPods, pod)
 				break
