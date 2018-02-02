@@ -417,6 +417,7 @@ func (hjc *HybridJobController) createPods(hj *types.HybridJob) error {
 			selector.MatchLabels[k] = v
 		}
 		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
+		selector.MatchLabels[OwnerReference] = string(hj.UID)
 		tfReplicaSpec.Selector = selector
 		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
 			for {
@@ -524,11 +525,9 @@ func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) e
 			return err
 		}
 		for _, pod := range pods {
-			if tools.IsOwnerOfThePod(hybridJob, pod) {
-				glog.V(4).Infof("Pod %s/%s to be delete cause by the hybridjob had been deleted", pod.Namespace, pod.Name)
-				hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
-				hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
-			}
+			glog.V(4).Infof("Pod %s/%s to be delete cause by the hybridjob had been deleted", pod.Namespace, pod.Name)
+			hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
+			hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "SuccessfulDelete", "Deleted pod: %v", pod.Name)
 		}
 	}
 	return nil
