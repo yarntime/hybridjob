@@ -22,13 +22,6 @@ const (
 	FullCRDName string = HybridJobs + "." + Group
 )
 
-type TfReplicaType string
-
-const (
-	PS     TfReplicaType = "ps"
-	WORKER TfReplicaType = "worker"
-)
-
 type JobPhase string
 
 const (
@@ -50,28 +43,28 @@ type HybridJob struct {
 
 type HybridJobSpec struct {
 	Selector     *meta_v1.LabelSelector `json:"selector"`
-	ReplicaSpecs []*TfReplicaSpec       `json:"replicaSpecs"`
+	ReplicaSpecs []*ReplicaSpec         `json:"replicaSpecs"`
 }
 
-type TfReplicaSpec struct {
-	NodeName      string                 `json:"nodeName,omitempty"`
-	MinReplicas   *int32                 `json:"min,omitempty"`
-	MaxReplicas   *int32                 `json:"max,omitempty"`
-	Priority      *int32                 `json:"priority,omitempty"`
-	Selector      *meta_v1.LabelSelector `json:"selector"`
-	Template      *v1.PodTemplateSpec    `json:"template,omitempty"`
-	TfReplicaType `json:"tfReplicaType"`
+type ReplicaSpec struct {
+	NodeName    string                 `json:"nodeName,omitempty"`
+	MinReplicas *int32                 `json:"min,omitempty"`
+	MaxReplicas *int32                 `json:"max,omitempty"`
+	Priority    *int32                 `json:"priority,omitempty"`
+	Selector    *meta_v1.LabelSelector `json:"selector"`
+	Template    *v1.PodTemplateSpec    `json:"template,omitempty"`
+	ReplicaType string                 `json:"replicaType"`
 }
 
 type HybridJobStatus struct {
-	Phase           JobPhase                           `json:"phase,omitempty"`
-	StartTime       *meta_v1.Time                      `json:"startTime,omitempty"`
-	Hosts           map[TfReplicaType]string           `json:"hosts,omitempty"`
-	TfReplicaStatus map[TfReplicaType]*TfReplicaStatus `json:"tfReplicaStatus"`
-	IsChanged       bool
+	Phase         JobPhase                  `json:"phase,omitempty"`
+	StartTime     *meta_v1.Time             `json:"startTime,omitempty"`
+	Hosts         map[string]string         `json:"hosts,omitempty"`
+	ReplicaStatus map[string]*ReplicaStatus `json:"replicaStatus"`
+	IsChanged     bool
 }
 
-type TfReplicaStatus struct {
+type ReplicaStatus struct {
 	Phase     JobPhase `json:"phase,omitempty"`
 	Active    int32    `json:"active,omitempty"`
 	Succeeded int32    `json:"succeeded,omitempty"`

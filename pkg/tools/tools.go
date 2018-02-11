@@ -58,22 +58,22 @@ func GetPodsFinalizers(template *v1.PodTemplateSpec) []string {
 	return desiredFinalizers
 }
 
-func GetPodsAnnotationSet(key string, roleCount int32, tfReplicaSpec *types.TfReplicaSpec) (labels.Set, error) {
+func GetPodsAnnotationSet(key string, roleCount int32, replicaSpec *types.ReplicaSpec) (labels.Set, error) {
 	desiredAnnotations := make(labels.Set)
-	for k, v := range tfReplicaSpec.Template.Annotations {
+	for k, v := range replicaSpec.Template.Annotations {
 		desiredAnnotations[k] = v
 	}
 
 	group := types.SchedulingGroup{
 		Group:       key,
-		Role:        string(tfReplicaSpec.TfReplicaType),
+		Role:        string(replicaSpec.ReplicaType),
 		RoleCount:   roleCount,
-		MinReplicas: *tfReplicaSpec.MinReplicas,
-		MaxReplicas: *tfReplicaSpec.MaxReplicas,
+		MinReplicas: *replicaSpec.MinReplicas,
+		MaxReplicas: *replicaSpec.MaxReplicas,
 	}
 
-	if tfReplicaSpec.Priority != nil {
-		group.Priority = *tfReplicaSpec.Priority
+	if replicaSpec.Priority != nil {
+		group.Priority = *replicaSpec.Priority
 	}
 	data, _ := json.Marshal(&group)
 	desiredAnnotations[SchedulingGroup] = string(data)

@@ -407,21 +407,21 @@ func (hjc *HybridJobController) createConfigMap(hj *types.HybridJob) error {
 
 func (hjc *HybridJobController) createPods(hj *types.HybridJob) error {
 	commonLabels := hj.ObjectMeta.Labels
-	hj.Status.TfReplicaStatus = make(map[types.TfReplicaType]*types.TfReplicaStatus)
+	hj.Status.ReplicaStatus = make(map[string]*types.ReplicaStatus)
 	createdPods := []*v1.Pod{}
-	for _, tfReplicaSpec := range hj.Spec.ReplicaSpecs {
+	for _, replicaSpec := range hj.Spec.ReplicaSpecs {
 		selector := &meta_v1.LabelSelector{
 			MatchLabels: make(map[string]string),
 		}
 		for k, v := range commonLabels {
 			selector.MatchLabels[k] = v
 		}
-		selector.MatchLabels[Role] = string(tfReplicaSpec.TfReplicaType)
+		selector.MatchLabels[Role] = string(replicaSpec.ReplicaType)
 		selector.MatchLabels[OwnerReference] = string(hj.UID)
-		tfReplicaSpec.Selector = selector
-		for index := int32(0); index < *tfReplicaSpec.MaxReplicas; index++ {
+		replicaSpec.Selector = selector
+		for index := int32(0); index < *replicaSpec.MaxReplicas; index++ {
 			for {
-				pod, err := hjc.createPod(tfReplicaSpec, hj, index)
+				pod, err := hjc.createPod(replicaSpec, hj, index)
 				if err != nil {
 					hjc.deleteCreatedPods(hj, createdPods)
 					return err
@@ -430,18 +430,18 @@ func (hjc *HybridJobController) createPods(hj *types.HybridJob) error {
 				break
 			}
 		}
-		hj.Status.TfReplicaStatus[tfReplicaSpec.TfReplicaType] = &types.TfReplicaStatus{
+		hj.Status.ReplicaStatus[replicaSpec.ReplicaType] = &types.ReplicaStatus{
 			Phase: types.Creating,
 		}
 	}
 	return nil
 }
 
-func (hjc *HybridJobController) processTfReplica(tfReplica *types.TfReplicaSpec, hybridJob *types.HybridJob) (types.JobPhase, error) {
+func (hjc *HybridJobController) processTfReplica(replica *types.ReplicaSpec, hybridJob *types.HybridJob) (types.JobPhase, error) {
 
-	preStatus, ok := hybridJob.Status.TfReplicaStatus[tfReplica.TfReplicaType]
+	preStatus, ok := hybridJob.Status.ReplicaStatus[replica.ReplicaType]
 	if !ok {
-		preStatus = &types.TfReplicaStatus{}
+		preStatus = &types.ReplicaStatus{}
 	}
 
 	phase := preStatus.Phase
@@ -450,7 +450,7 @@ func (hjc *HybridJobController) processTfReplica(tfReplica *types.TfReplicaSpec,
 		return phase, nil
 	}
 
-	pods, err := hjc.getPodsForTfReplica(hybridJob.Namespace, tfReplica)
+	pods, err := hjc.getPodsForReplica(hybridJob.Namespace, replica)
 	if err != nil {
 		return phase, err
 	}
@@ -463,7 +463,7 @@ func (hjc *HybridJobController) processTfReplica(tfReplica *types.TfReplicaSpec,
 	if desired == 0 {
 		assignedPods, unassignedPods := tools.FilterAssignedPods(pods)
 		desired = int32(len(assignedPods))
-		glog.V(4).Infof("TfReplica(%s/%s:%s) is assigned, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+		glog.V(4).Infof("Replica(%s/%s:%s) is assigned, delete unnecessary pods", hybridJob.Namespace, hybridJob.Name, replica.ReplicaType)
 
 		for _, pod := range unassignedPods {
 			err = hjc.k8sClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{GracePeriodSeconds: tools.NewInt64(0)})
@@ -479,18 +479,18 @@ func (hjc *HybridJobController) processTfReplica(tfReplica *types.TfReplicaSpec,
 		phase = types.Running
 		preStatus.Desired = active
 		if hybridJob.Status.Hosts == nil {
-			hybridJob.Status.Hosts = make(map[types.TfReplicaType]string)
+			hybridJob.Status.Hosts = make(map[string]string)
 		}
-		hybridJob.Status.Hosts[tfReplica.TfReplicaType] = tools.GenerateHosts(activePods)
-		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaRunning", "Successful to start all containers in %s", string(tfReplica.TfReplicaType))
+		hybridJob.Status.Hosts[replica.ReplicaType] = tools.GenerateHosts(activePods)
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "ReplicaRunning", "Successful to start all containers in %s", string(replica.ReplicaType))
 	} else if desired != 0 && desired == succeeded && preStatus.Phase != types.Finished {
-		glog.V(4).Infof("TfReplica(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+		glog.V(4).Infof("Replica(%s/%s:%s) is Finished", hybridJob.Namespace, hybridJob.Name, string(replica.ReplicaType))
 		phase = types.Finished
-		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "TfReplicaFinished", "Successful to run all containers in %s", string(tfReplica.TfReplicaType))
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeNormal, "ReplicaFinished", "Successful to run all containers in %s", string(replica.ReplicaType))
 	} else if desired != 0 && desired == failed && preStatus.Phase != types.Failed {
-		glog.V(4).Infof("TfReplica(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(tfReplica.TfReplicaType))
+		glog.V(4).Infof("Replica(%s/%s:%s) is Failed", hybridJob.Namespace, hybridJob.Name, string(replica.ReplicaType))
 		phase = types.Failed
-		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "TfReplicaFailed", "Failed to run container in %s", string(tfReplica.TfReplicaType))
+		hjc.recorder.Eventf(hybridJob, v1.EventTypeWarning, "ReplicaFailed", "Failed to run container in %s", string(replica.ReplicaType))
 	}
 
 	if preStatus.Phase != phase || preStatus.Failed != failed || preStatus.Succeeded != succeeded || preStatus.Desired != desired || preStatus.Active != active {
@@ -520,7 +520,7 @@ func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) e
 	}
 
 	for _, tfReplica := range hybridJob.Spec.ReplicaSpecs {
-		pods, err := hjc.getPodsForTfReplica(hybridJob.Namespace, tfReplica)
+		pods, err := hjc.getPodsForReplica(hybridJob.Namespace, tfReplica)
 		if err != nil {
 			return err
 		}
@@ -533,8 +533,8 @@ func (hjc *HybridJobController) deleteAllResources(hybridJob *types.HybridJob) e
 	return nil
 }
 
-func (hjc *HybridJobController) getPodsForTfReplica(namespace string, tfr *types.TfReplicaSpec) ([]v1.Pod, error) {
-	selector, err := meta_v1.LabelSelectorAsSelector(tfr.Selector)
+func (hjc *HybridJobController) getPodsForReplica(namespace string, rs *types.ReplicaSpec) ([]v1.Pod, error) {
+	selector, err := meta_v1.LabelSelectorAsSelector(rs.Selector)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't convert Job selector: %v", err)
 	}
@@ -556,20 +556,20 @@ func (hjc *HybridJobController) updateHybridJob(hybridJob *types.HybridJob) erro
 	return nil
 }
 
-func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob, index int32) (*v1.Pod, error) {
-	pod, err := GetPodFromTemplate(tfReplicaSpec, hybridJob)
+func (hjc *HybridJobController) createPod(replicaSpec *types.ReplicaSpec, hybridJob *types.HybridJob, index int32) (*v1.Pod, error) {
+	pod, err := GetPodFromTemplate(replicaSpec, hybridJob)
 	if err != nil {
 		return nil, err
 	}
 
-	pod.GenerateName = hybridJob.Name + "-" + strings.ToLower(string(tfReplicaSpec.TfReplicaType)) + "-"
+	pod.GenerateName = hybridJob.Name + "-" + strings.ToLower(string(replicaSpec.ReplicaType)) + "-"
 
-	if len(tfReplicaSpec.NodeName) != 0 {
-		pod.Spec.NodeName = tfReplicaSpec.NodeName
+	if len(replicaSpec.NodeName) != 0 {
+		pod.Spec.NodeName = replicaSpec.NodeName
 	}
 
 	// add selector to pod's label
-	for k, v := range tfReplicaSpec.Selector.MatchLabels {
+	for k, v := range replicaSpec.Selector.MatchLabels {
 		pod.ObjectMeta.Labels[k] = v
 	}
 
@@ -589,12 +589,12 @@ func (hjc *HybridJobController) createPod(tfReplicaSpec *types.TfReplicaSpec, hy
 	return newPod, nil
 }
 
-func GetPodFromTemplate(tfReplicaSpec *types.TfReplicaSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
-	template := tfReplicaSpec.Template
+func GetPodFromTemplate(replicaSpec *types.ReplicaSpec, hybridJob *types.HybridJob) (*v1.Pod, error) {
+	template := replicaSpec.Template
 	key := tools.GetKeyOfHybridJob(hybridJob)
 	desiredLabels := tools.GetPodsLabelSet(template)
 	desiredFinalizers := tools.GetPodsFinalizers(template)
-	desiredAnnotations, err := tools.GetPodsAnnotationSet(key, int32(len(hybridJob.Spec.ReplicaSpecs)), tfReplicaSpec)
+	desiredAnnotations, err := tools.GetPodsAnnotationSet(key, int32(len(hybridJob.Spec.ReplicaSpecs)), replicaSpec)
 	if err != nil {
 		return nil, err
 	}
