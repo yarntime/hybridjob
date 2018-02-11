@@ -26,7 +26,7 @@ spec:
             requests:
               cpu: 3
         restartPolicy: Never
-    tfReplicaType: ps
+    replicaType: ps
   - max: 2
     min: 1
     priority: 2
@@ -46,4 +46,4 @@ spec:
             requests:
               cpu: 3
         restartPolicy: Never
-    tfReplicaType: worker
+    replicaType: worker

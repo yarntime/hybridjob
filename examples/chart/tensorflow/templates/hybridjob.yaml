@@ -50,7 +50,7 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.variables.pvc.value }}
         restartPolicy: Never
-    tfReplicaType: ps
+    replicaType: ps
   - max: {{ .Values.worker.variables.maxReplicaCount.value }}
     min: {{ .Values.worker.variables.minReplicaCount.value }}
     priority: 2
@@ -92,4 +92,4 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.variables.pvc.value }}
-    tfReplicaType: worker
+    replicaType: worker
